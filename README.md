@@ -14,7 +14,7 @@ See [setup instructions](docs/ha-integration-setup.md) for tracker enrollment an
 The Core2 firmware is in [m5stackcore2.yaml](m5stackcore2.yaml).
 The first HA integration now consumes shopping scan events and exposes a persistent
 household to-do list. See [installation and smoke test](docs/ha-integration-setup.md).
-Krónan lookup, cart export, and the dedicated analytics portal are not implemented.
+Krónan barcode lookup and product-name feedback are implemented in v0.2.0; configure an access token in HA and update the firmware. Cart export and the dedicated analytics portal are not implemented.
 Older architecture proposals below and in the charter are superseded where they
 conflict with this implemented slice and the planned separate application/portal.
 

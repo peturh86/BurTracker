@@ -3,13 +3,27 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.core import callback
+from homeassistant.helpers import selector
 
 from .const import CONF_TRACKERS, DOMAIN
 from .model import parse_trackers
 
 
 def tracker_schema(default):
-    return vol.Schema({vol.Required(CONF_TRACKERS, default=default): str})
+    return vol.Schema({
+        vol.Required(CONF_TRACKERS, default=default): str,
+        vol.Optional("kronan_token"): selector.TextSelector(
+            selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+        ),
+    })
+
+
+def entry_values(names, user_input, existing=None):
+    values = {CONF_TRACKERS: ", ".join(sorted(names))}
+    # Blank/missing input preserves an existing token; never redisplay it.
+    token = user_input.get("kronan_token", "").strip()
+    values["kronan_token"] = token or (existing or {}).get("kronan_token", "")
+    return values
 
 
 class BurTrackerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -29,7 +43,7 @@ class BurTrackerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._abort_if_unique_id_configured()
                 return self.async_create_entry(
                     title="BurTracker",
-                    data={CONF_TRACKERS: ", ".join(sorted(names))},
+                    data=entry_values(names, user_input),
                 )
         return self.async_show_form(
             step_id="user", errors=errors,
@@ -54,7 +68,10 @@ class BurTrackerOptionsFlow(config_entries.OptionsFlow):
                 errors["base"] = "invalid_trackers"
             else:
                 return self.async_create_entry(
-                    title="", data={CONF_TRACKERS: ", ".join(sorted(names))}
+                    title="", data=entry_values(
+                        names, user_input,
+                        dict(self.config_entry.data) | dict(self.config_entry.options),
+                    )
                 )
         default = self.config_entry.options.get(
             CONF_TRACKERS, self.config_entry.data[CONF_TRACKERS]

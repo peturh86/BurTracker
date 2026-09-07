@@ -37,7 +37,8 @@ class BurTrackerShoppingList(TodoListEntity):
                 uid=item["uid"], summary=item["summary"],
                 status=TodoItemStatus(item["status"]),
                 description=(
-                    f"Barcode: {item['barcode']} | Retailer match: unresolved"
+                    f"Barcode: {item['barcode']} | Retailer match: {item.get('resolution', 'unresolved')}"
+                    + (f" | Kronan SKU: {item['sku']}" if item.get("sku") else "")
                     if item.get("barcode") else None
                 ),
             )

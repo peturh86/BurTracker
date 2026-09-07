@@ -4,9 +4,10 @@
     "step": {
       "user": {
         "title": "Household shopping list",
-        "description": "Enter exact ESPHome node names, separated by commas. Shopping scan events from these trackers populate your shared list.",
+        "description": "Enter exact ESPHome node names, separated by commas. Shopping scan events from these trackers populate your shared list. Add a Kronan access token for barcode lookup. Leave it blank to keep an existing token. The token stays in Home Assistant.",
         "data": {
-          "trackers": "Tracker names"
+          "trackers": "Tracker names",
+          "kronan_token": "Kronan access token (optional)"
         }
       }
     },
@@ -21,9 +22,10 @@
     "step": {
       "init": {
         "title": "Tracker names",
-        "description": "Enter exact ESPHome node names, separated by commas.",
+        "description": "Enter exact ESPHome node names, separated by commas. Add a Kronan access token for barcode lookup. Leave it blank to keep an existing token. The token stays in Home Assistant.",
         "data": {
-          "trackers": "Tracker names"
+          "trackers": "Tracker names",
+          "kronan_token": "Kronan access token (optional)"
         }
       }
     },

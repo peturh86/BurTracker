@@ -83,3 +83,18 @@ class ShoppingList:
 
     def delete(self, uids):
         self.items = [item for item in self.items if item["uid"] not in uids]
+
+    def resolve(self, uid, product, timestamp):
+        """Enrich an existing item; never resurrect a deleted item."""
+        item = next((item for item in self.items if item["uid"] == uid), None)
+        if item is None:
+            return False
+        previous_name = item.get("product_name")
+        if item["summary"] == f"Unresolved barcode: {item.get('barcode')}" or item["summary"] == previous_name:
+            item["summary"] = product["name"]
+        item.update(
+            resolution="resolved", provider=product["provider"],
+            sku=product["sku"], product_name=product["name"],
+            resolved_at=timestamp,
+        )
+        return True

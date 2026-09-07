@@ -72,6 +72,27 @@ class ShoppingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.list.create("  ", "t1")
 
+    def test_resolution_persists_provider_and_name(self):
+        uid, _ = self.list.scan("00123", "kitchen", "t1")
+        product = {"provider": "kronan", "sku": "77", "name": "Milk"}
+        self.assertTrue(self.list.resolve(uid, product, "t2"))
+        self.assertEqual(self.list.items[0]["summary"], "Milk")
+        self.assertEqual(self.list.items[0]["sku"], "77")
+        self.assertEqual(self.list.items[0]["barcode"], "00123")
+
+    def test_resolution_preserves_manual_name(self):
+        uid, _ = self.list.scan("00123", "kitchen", "t1")
+        self.list.update(uid, "My milk", model.NEEDS_ACTION, "t2")
+        self.list.resolve(uid, {"provider": "kronan", "sku": "77", "name": "Milk"}, "t3")
+        self.assertEqual(self.list.items[0]["summary"], "My milk")
+
+    def test_late_resolution_does_not_recreate_deleted_item(self):
+        uid, _ = self.list.scan("00123", "kitchen", "t1")
+        self.list.delete([uid])
+        self.assertFalse(self.list.resolve(
+            uid, {"provider": "kronan", "sku": "77", "name": "Milk"}, "t2"))
+        self.assertEqual(self.list.items, [])
+
     def test_tracker_options(self):
         self.assertEqual(model.parse_trackers(" kitchen, bin, kitchen "),
                          {"kitchen", "bin"})
