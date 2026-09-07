@@ -1,0 +1,32 @@
+# Local secrets and household data
+.env
+.env.*
+!.env.example
+secrets/
+private-data/
+*.pem
+*.key
+*.db
+*.db-shm
+*.db-wal
+*.sqlite*
+
+# Build and tool output
+node_modules/
+__pycache__/
+.venv/
+.pytest_cache/
+build/
+dist/
+managed_components/
+sdkconfig.old
+*.kicad_prl
+*.kicad_sch.lck
+*.kicad_pcb.lck
+*-backups/
+.DS_Store
+Thumbs.db
+
+# ESPHome local credentials and build cache
+secrets.yaml
+.esphome/

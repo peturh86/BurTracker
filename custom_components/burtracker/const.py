@@ -1,0 +1,5 @@
+"""BurTracker integration constants."""
+DOMAIN = "burtracker"
+CONF_TRACKERS = "trackers"
+SCAN_EVENT = "esphome.burtracker_scan"
+RESULT_EVENT = "burtracker.scan_processed"

@@ -1,0 +1,34 @@
+{
+  "title": "BurTracker",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Household shopping list",
+        "description": "Enter exact ESPHome node names, separated by commas. Shopping scan events from these trackers populate your shared list.",
+        "data": {
+          "trackers": "Tracker names"
+        }
+      }
+    },
+    "error": {
+      "invalid_trackers": "Enter at least one tracker name."
+    },
+    "abort": {
+      "single_instance_allowed": "Only one household list is supported."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Tracker names",
+        "description": "Enter exact ESPHome node names, separated by commas.",
+        "data": {
+          "trackers": "Tracker names"
+        }
+      }
+    },
+    "error": {
+      "invalid_trackers": "Enter at least one tracker name."
+    }
+  }
+}
