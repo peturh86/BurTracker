@@ -1,6 +1,7 @@
 #pragma once
 #include <M5Unified.h>
 #include <string>
+#include <vector>
 
 namespace burtracker {
 struct Screen {
@@ -8,45 +9,37 @@ struct Screen {
   int request_mode = 0;
   bool spoil_armed = false;
   std::string title = "Starting scanner";
-  std::string detail = "Please wait";
+  std::string detail;
   std::string price;
-  std::string footer = "BURTRACKER";
   uint32_t colors[3] = {0x62DE9C, 0xFF707C, 0xFFD166};
 
   const char* intent() const {
     return mode == 1 ? "spoiled" : mode == 2 ? "price" : "shopping";
   }
 
-  void wrapped(const std::string& text, int y, int lines) {
-    auto& d = M5.Display;
+  std::vector<std::string> lines(const std::string& text) {
+    std::vector<std::string> out;
     std::string line;
-    size_t pos = 0;
-    for (int row = 0; row < lines && pos < text.size(); ++row) {
-      line.clear();
-      while (pos < text.size()) {
-        unsigned char c = text[pos];
-        size_t n = c < 0x80 ? 1 : c < 0xE0 ? 2 : c < 0xF0 ? 3 : 4;
-        n = std::min(n, text.size() - pos);
-        std::string next = line + text.substr(pos, n);
-        if (d.textWidth(next.c_str()) > 268 && !line.empty()) break;
-        line = next;
-        pos += n;
-      }
-      if (row == lines - 1 && pos < text.size()) {
-        while (!line.empty() && d.textWidth((line + "...").c_str()) > 268) {
-          size_t start = line.size() - 1;
-          while (start > 0 && (static_cast<unsigned char>(line[start]) & 0xC0) == 0x80) --start;
-          line.erase(start);
-        }
-        line += "...";
-      }
-      d.drawString(line.c_str(), 26, y + row * 20);
+    for (size_t pos = 0; pos < text.size();) {
+      unsigned char c = text[pos];
+      size_t n = c < 0x80 ? 1 : c < 0xE0 ? 2 : c < 0xF0 ? 3 : 4;
+      n = std::min(n, text.size() - pos);
+      std::string next = line + text.substr(pos, n);
+      if (M5.Display.textWidth(next.c_str()) > 264 && !line.empty()) {
+        size_t space = line.find_last_of(' ');
+        if (space != std::string::npos && space > line.size() / 2) {
+          out.push_back(line.substr(0, space));
+          line = line.substr(space + 1);
+        } else { out.push_back(line); line.clear(); }
+      } else { line = next; pos += n; }
     }
+    if (!line.empty()) out.push_back(line);
+    return out;
   }
 
   void render() {
     auto& d = M5.Display;
-    constexpr uint32_t bg = 0x101923, panel = 0x1C2937, muted = 0x9AABBC;
+    constexpr uint32_t bg = 0x101923, panel = 0x1C2937, muted = 0xAFC0D0;
     d.startWrite();
     d.fillScreen(bg);
     d.setTextDatum(top_left);
@@ -61,27 +54,43 @@ struct Screen {
       d.drawCenterString(labels[i], x + 48, 16);
       if (i == mode) d.fillTriangle(x + 42, 6, x + 54, 6, x + 48, 0, colors[i]);
     }
-    d.fillCircle(15, 59, 3, colors[mode]);
-    d.setTextColor(muted);
-    d.drawString(mode == 0 ? "KRONAN / HA LIST" :
-                 mode == 1 ? "REPORT SPOILAGE" : "KRONAN PRICE CHECK", 26, 51);
-    d.fillRoundRect(12, 76, 296, 125, 12, panel);
-    d.fillRoundRect(12, 89, 3, 98, 1, colors[mode]);
+    d.fillRoundRect(8, 54, 304, 178, 12, panel);
+    d.fillRoundRect(8, 69, 3, 148, 1, colors[mode]);
     d.setTextColor(0xF3F7FA);
-    wrapped(title, 88, price.empty() ? 3 : 2);
-    if (!price.empty()) {
-      d.setFont(&fonts::Font0);
-      d.setTextSize(3);
-      d.setTextColor(colors[mode]);
-      d.drawString(price.c_str(), 26, 143);
-      d.setFont(&fonts::efontJA_16);
-      d.setTextSize(1);
+    int available = price.empty() ? (detail.empty() ? 142 : 124) : 86;
+    std::vector<std::string> wrapped;
+    int line_height = 20;
+    for (float scale : {2.0f, 1.5f, 1.0f}) {
+      d.setTextSize(scale);
+      line_height = int(16 * scale) + 4;
+      wrapped = lines(title);
+      if (int(wrapped.size()) * line_height <= available) break;
     }
-    d.setTextColor(muted);
-    d.drawString(detail.c_str(), 26, 178);
-    d.setFont(&fonts::Font0);
-    d.setTextColor(0x9AABBC);
-    d.drawCenterString(footer.c_str(), 160, 217);
+    int limit = available / line_height;
+    for (int i = 0; i < std::min(int(wrapped.size()), limit); ++i) {
+      std::string line = wrapped[i];
+      if (i == limit - 1 && int(wrapped.size()) > limit) {
+        while (!line.empty() && d.textWidth((line + "...").c_str()) > 264) {
+          size_t start = line.size() - 1;
+          while (start && (static_cast<unsigned char>(line[start]) & 0xC0) == 0x80) --start;
+          line.erase(start);
+        }
+        line += "...";
+      }
+      d.drawString(line.c_str(), 24, 68 + i * line_height);
+    }
+    if (!price.empty()) {
+      d.setTextSize(2);
+      if (d.textWidth(price.c_str()) > 264) d.setTextSize(1);
+      d.setTextColor(colors[mode]);
+      d.drawString(price.c_str(), 24, 161);
+    }
+    if (!detail.empty()) {
+      d.setTextSize(1);
+      d.setTextColor(muted);
+      d.drawString(detail.c_str(), 24, 207);
+    }
+    d.setTextSize(1);
     d.endWrite();
   }
 
@@ -90,9 +99,7 @@ struct Screen {
     spoil_armed = mode == 1;
     price.clear();
     title = "Show a barcode";
-    detail = mode == 0 ? "Add it to Kronan / HA" :
-             mode == 1 ? "Record one spoiled item" : "Look up the catalog price";
-    footer = mode == 1 ? "ONE SCAN ARMED" : "SCAN WHEN READY";
+    detail.clear();
     render();
   }
 
@@ -100,20 +107,20 @@ struct Screen {
     request_mode = mode;
     if (mode == 1) spoil_armed = false;
     title = "Reading product...";
-    detail = "Waiting for Home Assistant";
+    detail.clear();
     price.clear();
-    footer = mode == 1 ? "ONE SPOILAGE REPORT" : "KRONAN LOOKUP";
     render();
   }
 
   void result(const std::string& status, const std::string& name,
-              const std::string& price_text, const std::string& outcome) {
+              const std::string& price_text, const std::string& outcome,
+              const std::string& quantity = "") {
     price = price_text;
     title = name.empty() ? "Product unavailable" : name;
     detail = outcome == "reported" || outcome == "already_reported" ? "Spoilage recorded" :
-             outcome == "lookup_only" ? "Catalog price / ISK" :
+             outcome == "lookup_only" ? "" :
              outcome == "save_failed" ? "Nothing recorded" :
-             outcome == "kronan_added" ? "On Kronan / HA list" :
+             outcome == "kronan_added" ? (quantity.empty() ? "+1 added to HA" : "+1 added / " + quantity) :
              outcome == "unresolved" ? "Saved for identification" :
              outcome == "not_added" ? "Not added to Kronan" : "Shopping list updated";
     if (status != "resolved") {
@@ -125,13 +132,13 @@ struct Screen {
               status == "item_removed" ? "Item removed" :
               status == "write_uncertain" ? "Check your Kronan list" :
               status == "list_ambiguous" ? "Multiple HA lists found" :
+              status == "quantity_limit" ? "Quantity limit reached" :
               status == "list_failed" || status == "list_missing" ? "Kronan list unavailable" : "Lookup unavailable";
       if (status == "write_uncertain") detail = "Addition could not be confirmed";
     } else if (request_mode == 2 && price.empty()) {
       detail = "No catalog price available";
     }
-    footer = mode == 1 ? "PRESS SPOILED TO SCAN NEXT" :
-             mode == 2 ? "CATALOG PRICE / CACHE UP TO 5 MIN" : "READY FOR THE NEXT ITEM";
+    if (mode == 1 && !spoil_armed && status == "resolved") detail = "Recorded / tap SPOILED for next";
     render();
   }
 };

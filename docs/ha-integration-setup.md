@@ -1,9 +1,9 @@
-# BurTracker setup (0.4.0)
+# BurTracker setup (0.5.0)
 
 ## Install/update
 
 1. Add https://github.com/peturh86/BurTracker in HACS Custom repositories, type Integration.
-2. Download/update to 0.4.0 and restart Home Assistant.
+2. Download/update to 0.5.0 and restart Home Assistant.
 3. Configure BurTracker with your exact ESPHome tracker names (comma-separated).
 4. Enter your Krónan access token. Blank input preserves an existing token.
 5. The integration finds a product list named exactly HA in that token's user/customer
@@ -26,14 +26,23 @@ Green Shopping resolves a barcode, then adds its SKU to the Krónan product list
 This is a product list, not the active checkout. No checkout/order/payment operations
 are performed.
 
-The API's batch-add operation skips products already present, preserving their
-quantities. Every shopping scan checks with Krónan; a local cache cannot suppress
-re-adding an item that you removed from Krónan.
+Each accepted Shopping scan increments the product quantity by one. The integration
+reads the current remote list, then calls update-item with current quantity + 1.
+All trackers in this integration share a lock, preventing lost increments between
+their concurrent scans. The API exposes absolute quantity updates, not an atomic
+increment: concurrent edits from the Krónan app or another HA installation can race
+with this read/write operation.
 
-The device says success only after the API returns the SKU in the product list with
-positive quantity. A timeout or ambiguous server response is unconfirmed, not success
-or guaranteed failure. Check Krónan in that case. Retrying batch-add is safe for
-existing quantities.
+A persistent request journal prevents the same tracker/request ID from incrementing
+twice, including after HA restart. New request IDs represent new scans and increment
+again. The journal records a pending write before issuing the POST. An ambiguous
+write is never automatically replayed: check the Krónan list. A new intentional scan
+will read the current quantity and add one more. Confirmed quantities are shown on
+the device. The API's maximum quantity is 10,000.
+
+The firmware's existing three-second repeat filter remains. A barcode continuously
+presented and decoded can produce another accepted scan after that interval; this
+is not guaranteed one-per-presentation detection. Remove it after the desired scan.
 
 Initialization searches all returned pages before creation. Failed/incomplete searches
 never trigger creation. Duplicate HA list names produce an explicit error instead of
@@ -86,7 +95,8 @@ Endpoints used:
 - GET /api/v1/products/barcode/{barcode}/
 - GET /api/v1/product-lists/ (limit/offset pagination)
 - POST /api/v1/product-lists/ (name: HA)
-- POST /api/v1/product-lists/{token}/batch-add-items/ (skus: [resolved SKU])
+- GET /api/v1/product-lists/{token}/
+- POST /api/v1/product-lists/{token}/update-item/ (sku and absolute quantity)
 
 Source: https://api.kronan.is/api/v1/schema/swagger-ui/#/product-lists
 Machine schema: https://api.kronan.is/api/v1/schema/
@@ -98,11 +108,11 @@ schema_version: "1", tracker: exact node name, barcode: string preserving leadin
 intent: shopping/spoiled/price, request_id: random boot-session plus sequence.
 
 Tracker names are routing filters, not authentication. The HA event bus is trusted.
-Request IDs correlate display replies and deduplicate spoilage, not every external
-effect across restarts.
+Request IDs correlate display replies and deduplicate spoilage and shopping writes.
+Shopping requests without an ID are rejected; update firmware before using this release.
 
-HA calls esphome.<node>_burtracker_result_v2 with request_id, barcode, lookup_status,
-product_name, price_text, outcome. The v0.2 action remains a fallback. New firmware
+HA calls esphome.<node>_burtracker_result_v3 with request_id, barcode, lookup_status,
+product_name, price_text, outcome, quantity_text. Earlier actions remain fallbacks. New firmware
 waits 30 seconds, rejects replies for old requests/modes, and shows unknown status
 after timeout. No offline queue or replay is implemented.
 
@@ -118,11 +128,25 @@ responses; no real retailer credentials are present in the development environme
 Live checks:
 1. Configure a token: exactly one HA product list is found or created.
 2. Scan a known product in green: it appears in Krónan HA, with its name on the device.
-3. Scan again: its existing quantity is preserved.
+3. Scan again: quantity increases by one; confirm the resulting amount on screen.
 4. Remove it in Krónan and scan again: it is re-added.
 5. Yellow and red scans never add to Krónan.
 6. An unknown barcode is kept locally, not posted to Krónan.
 7. Restart HA: the same remote list is reused; local spoilage reports remain.
 
-Release verification: 43 automated tests passed. Full Core2 compilation passed on
+Release verification: 46 automated tests passed. Full Core2 compilation passed on
 ESPHome 2026.7.3 using dummy credentials; authenticated remote writes remain untested.
+
+
+## Simplified device UI (0.5.0)
+
+The mode tabs are retained. The product card now fills the remaining screen height;
+names use 32, 24, or 16 pixel text according to available space, wrap at words when
+possible, and truncate only when the smallest size cannot fit. Prices and quantity
+confirmation have their own rows. Repeated mode descriptions, the tiny footer, and
+cache implementation details have been removed. The Spoiled rearm instruction is
+kept in the readable status row.
+
+The shopping request journal is stored in .storage/burtracker.<entry_id>.increments.
+Removing the integration removes this journal too. Deleting it removes replay
+protection for old request IDs. This is a request ledger, not purchase history.

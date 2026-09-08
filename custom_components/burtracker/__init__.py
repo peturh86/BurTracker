@@ -30,7 +30,10 @@ class Household:
         self.lock = asyncio.Lock()
         self.model = ShoppingList()
         token = entry.options.get("kronan_token", entry.data.get("kronan_token", ""))
-        self.retailer = KronanRetailer(async_get_clientsession(hass), token)
+        self.retailer = KronanRetailer(
+            async_get_clientsession(hass), token,
+            Store(hass, 1, f"{DOMAIN}.{entry.entry_id}.increments"),
+        )
         self.latest_request = {}
         self.trackers = parse_trackers(
             entry.options.get(CONF_TRACKERS, entry.data[CONF_TRACKERS])
@@ -51,7 +54,7 @@ class Household:
                 async_dispatcher_send(self.hass, self.signal)
             return result
 
-    async def async_reply(self, tracker, barcode, request_id, status, name="", price_text="", outcome="added"):
+    async def async_reply(self, tracker, barcode, request_id, status, name="", price_text="", outcome="added", quantity_text=""):
         """Use the existing ESPHome connection, with no additional API client."""
         if not request_id or self.latest_request.get(tracker) != request_id:
             return
@@ -63,7 +66,10 @@ class Household:
                 "request_id": request_id, "barcode": barcode,
                 "lookup_status": status, "product_name": name,
         }
-        if self.hass.services.has_service("esphome", action + "_v2"):
+        if self.hass.services.has_service("esphome", action + "_v3"):
+            action += "_v3"
+            payload.update(price_text=price_text, outcome=outcome, quantity_text=quantity_text)
+        elif self.hass.services.has_service("esphome", action + "_v2"):
             action += "_v2"
             payload.update(price_text=price_text, outcome=outcome)
         try:
@@ -82,8 +88,8 @@ class Household:
             _LOGGER.debug("Ignoring scan with invalid request ID")
             return
         intent = event.data["intent"]
-        if intent == "spoiled" and not request_id:
-            _LOGGER.debug("Ignoring spoilage without request ID")
+        if intent in ("shopping", "spoiled") and not request_id:
+            _LOGGER.debug("Ignoring scan without request ID")
             return
         self.latest_request[tracker] = request_id
         try:
@@ -101,6 +107,7 @@ class Household:
 
         name = ""
         price_text = ""
+        quantity_text = ""
         try:
             product = await self.retailer.lookup(barcode)
             if product is None:
@@ -113,7 +120,11 @@ class Household:
             else:
                 saved = True
                 if intent == "shopping":
-                    outcome = await self.retailer.add_to_shopping_list(product)
+                    quantity = await self.retailer.add_to_shopping_list(
+                        product, f"{tracker}:{request_id}"
+                    )
+                    quantity_text = f"{quantity} on list"
+                    outcome = "kronan_added"
                 elif intent == "spoiled":
                     saved = await self.async_mutate(
                         "resolve_spoiled", uid, asdict(product), dt_util.utcnow().isoformat()
@@ -134,9 +145,9 @@ class Household:
             "tracker": tracker, "barcode": barcode, "request_id": request_id,
             "outcome": outcome, "item_uid": uid,
             "lookup_status": status, "product_name": name,
-            "intent": intent, "price_text": price_text,
+            "intent": intent, "price_text": price_text, "quantity_text": quantity_text,
         })
-        await self.async_reply(tracker, barcode, request_id, status, name, price_text, outcome)
+        await self.async_reply(tracker, barcode, request_id, status, name, price_text, outcome, quantity_text)
 
 
 async def async_setup_entry(hass, entry):
@@ -173,3 +184,4 @@ async def async_unload_entry(hass, entry):
 
 async def async_remove_entry(hass, entry):
     await Store(hass, 1, f"{DOMAIN}.{entry.entry_id}").async_remove()
+    await Store(hass, 1, f"{DOMAIN}.{entry.entry_id}.increments").async_remove()

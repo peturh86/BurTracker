@@ -12,7 +12,7 @@ See [setup instructions](docs/ha-integration-setup.md) for tracker enrollment an
 ## Working prototype
 
 The Core2 firmware is [m5stackcore2.yaml](m5stackcore2.yaml) plus [burtracker_ui.h](burtracker_ui.h), kept in the same folder. Its green/red/yellow tabs select Shopping, Spoiled, and Price.
-Shopping scans now add matched products to the Krónan product list named **HA**.
+Each accepted Shopping scan now adds one unit of a matched product to the Krónan product list named **HA**.
 The integration finds or creates that list at startup when a token is configured. See [installation and smoke test](docs/ha-integration-setup.md).
 Krónan barcode lookup and product-name feedback are implemented in v0.2.0; configure an access token in HA and update the firmware. Active checkout and the dedicated analytics portal are not implemented.
 Older architecture proposals below and in the charter are superseded where they

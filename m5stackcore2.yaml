@@ -178,7 +178,6 @@ interval:
             id(awaiting_reply) = false;
             burtracker::screen.title = "No reply from HA";
             burtracker::screen.detail = "Result is unknown";
-            burtracker::screen.footer = "CHECK CONNECTION / TRY AGAIN";
             burtracker::screen.render();
           }
 
@@ -263,6 +262,21 @@ api:
                 barcode != id(active_barcode)) return;
             id(awaiting_reply) = false;
             burtracker::screen.result(lookup_status, product_name, price_text, outcome);
+    - action: burtracker_result_v3
+      variables:
+        request_id: string
+        barcode: string
+        lookup_status: string
+        product_name: string
+        price_text: string
+        outcome: string
+        quantity_text: string
+      then:
+        - lambda: |-
+            if (!id(awaiting_reply) || request_id != id(active_request) ||
+                barcode != id(active_barcode)) return;
+            id(awaiting_reply) = false;
+            burtracker::screen.result(lookup_status, product_name, price_text, outcome, quantity_text);
 
 ota:
   - platform: esphome

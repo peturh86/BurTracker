@@ -27,5 +27,5 @@ class Retailer(Protocol):
     async def ensure_shopping_list(self) -> str:
         """Initialize the household's retailer-owned product list."""
 
-    async def add_to_shopping_list(self, product: Product) -> str:
-        """Ensure a resolved product is present in the retailer list."""
+    async def add_to_shopping_list(self, product: Product, request_key: str) -> int:
+        """Increment a product once per request and return confirmed quantity."""

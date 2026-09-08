@@ -169,30 +169,90 @@ class ProductListTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ctx.exception.status, "list_ambiguous")
         self.assertEqual(len(session.calls), 1)
 
-    async def test_batch_add_uses_sku_and_requires_confirmation(self):
-        client, session = self.client(Response(payload={
-            "items": [{"product": {"sku": "123"}, "quantity": 2}]}))
+
+    async def test_quantity_increments_and_replayed_request_does_not(self):
+        client, session = self.client(
+            Response(payload={"items": [{"product": {"sku": "123"}, "quantity": 2}]}),
+            Response(payload={"items": [{"product": {"sku": "123"}, "quantity": 3}]}),
+            Response(payload={"items": [{"product": {"sku": "123"}, "quantity": 3}]}),
+            Response(payload={"items": [{"product": {"sku": "123"}, "quantity": 4}]}),
+        )
         client.list_token = "ha-token"
         product = parse_product({"sku": "123", "name": "Milk"})
-        self.assertEqual(await client.add_to_shopping_list(product), "kronan_added")
-        method, url, kwargs = session.calls[0]
-        self.assertEqual(method, "POST")
-        self.assertTrue(url.endswith("/product-lists/ha-token/batch-add-items/"))
-        self.assertEqual(kwargs["json"], {"skus": ["123"]})
+        result = await asyncio.gather(
+            client.add_to_shopping_list(product, "kitchen:r1"),
+            client.add_to_shopping_list(product, "bin:r2"),
+        )
+        self.assertEqual(result, [3, 4])
+        self.assertEqual(await client.add_to_shopping_list(product, "kitchen:r1"), 3)
+        self.assertEqual(len(session.calls), 4)
+        self.assertTrue(session.calls[1][1].endswith("/update-item/"))
+        self.assertEqual(session.calls[1][2]["json"], {"sku": "123", "quantity": 3})
+        self.assertEqual(session.calls[3][2]["json"]["quantity"], 4)
 
-    async def test_unconfirmed_add_is_not_success(self):
-        client, _ = self.client(Response(payload={"items": []}))
+    async def test_unconfirmed_increment_is_not_retried(self):
+        client, session = self.client(
+            Response(payload={"items": []}),
+            Response(payload={"items": []}),
+        )
         client.list_token = "ha-token"
-        with self.assertRaises(LookupFailure) as ctx:
-            await client.add_to_shopping_list(parse_product({"sku": "123", "name": "Milk"}))
-        self.assertEqual(ctx.exception.status, "write_uncertain")
+        product = parse_product({"sku": "123", "name": "Milk"})
+        for _ in range(2):
+            with self.assertRaises(LookupFailure) as ctx:
+                await client.add_to_shopping_list(product, "r1")
+            self.assertEqual(ctx.exception.status, "write_uncertain")
+        self.assertEqual(len(session.calls), 2)
 
     async def test_deleted_list_invalidates_cached_token(self):
         client, _ = self.client(Response(status=404))
         client.list_token = "ha-token"
         with self.assertRaises(LookupFailure):
-            await client.add_to_shopping_list(parse_product({"sku": "123", "name": "Milk"}))
+            await client.add_to_shopping_list(parse_product({"sku": "123", "name": "Milk"}), "r1")
         self.assertIsNone(client.list_token)
+
+    async def test_missing_request_id_never_writes(self):
+        client, session = self.client()
+        with self.assertRaises(LookupFailure):
+            await client.add_to_shopping_list(parse_product({"sku": "123", "name": "Milk"}), "")
+        self.assertEqual(session.calls, [])
+
+    async def test_quantity_limit_does_not_write(self):
+        client, session = self.client(Response(payload={
+            "items": [{"product": {"sku": "123"}, "quantity": 10000}]}))
+        client.list_token = "ha-token"
+        with self.assertRaises(LookupFailure) as ctx:
+            await client.add_to_shopping_list(parse_product({"sku": "123", "name": "Milk"}), "r1")
+        self.assertEqual(ctx.exception.status, "quantity_limit")
+        self.assertEqual(len(session.calls), 1)
+
+    async def test_restart_retains_confirmed_and_uncertain_request_ids(self):
+        from copy import deepcopy
+        class MemoryStore:
+            data = None
+            async def async_load(self):
+                return deepcopy(self.data)
+            async def async_save(self, data):
+                self.data = deepcopy(data)
+        store = MemoryStore()
+        client, session = self.client(
+            Response(payload={"items": []}),
+            Response(payload={"items": [{"product": {"sku": "123"}, "quantity": 1}]}),
+            Response(payload={"items": [{"product": {"sku": "123"}, "quantity": 1}]}),
+            Response(status=500),
+        )
+        client.increment_store = store
+        client.list_token = "ha-token"
+        product = parse_product({"sku": "123", "name": "Milk"})
+        self.assertEqual(await client.add_to_shopping_list(product, "r1"), 1)
+        with self.assertRaises(LookupFailure):
+            await client.add_to_shopping_list(product, "r2")
+        restarted, unused = self.client()
+        restarted.increment_store = store
+        self.assertEqual(await restarted.add_to_shopping_list(product, "r1"), 1)
+        with self.assertRaises(LookupFailure) as ctx:
+            await restarted.add_to_shopping_list(product, "r2")
+        self.assertEqual(ctx.exception.status, "write_uncertain")
+        self.assertEqual(unused.calls, [])
 
     async def test_auth_failure_does_not_create(self):
         client, session = self.client(Response(status=401))

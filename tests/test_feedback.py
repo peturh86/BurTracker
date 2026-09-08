@@ -43,14 +43,14 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
     def make(self):
         h = object.__new__(module.Household)
         h.hass = types.SimpleNamespace(services=types.SimpleNamespace(
-            has_service=Mock(side_effect=lambda domain, action: not action.endswith("_v2")), async_call=AsyncMock(),
+            has_service=Mock(side_effect=lambda domain, action: not action.endswith(("_v2", "_v3"))), async_call=AsyncMock(),
         ))
         h.hass.bus = types.SimpleNamespace(async_fire=Mock())
         h.trackers = {"kitchen", "bin"}
         product_class = module.KronanRetailer.lookup.__globals__["Product"]
         h.retailer = types.SimpleNamespace(lookup=AsyncMock(
             return_value=product_class("kronan", "sku-1", "Milk", 399)),
-            add_to_shopping_list=AsyncMock(return_value="kronan_added"))
+            add_to_shopping_list=AsyncMock(return_value=3))
         h.latest_request = {"kitchen": "boot-2"}
         h.store = types.SimpleNamespace(async_save=AsyncMock())
         h.model = module.ShoppingList()
@@ -130,7 +130,7 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         await h.async_reply("kitchen", "123", "boot-2", "resolved", "Milk",
                             "399 kr", "lookup_only")
         args = h.hass.services.async_call.call_args.args
-        self.assertEqual(args[1], "kitchen_burtracker_result_v2")
+        self.assertEqual(args[1], "kitchen_burtracker_result_v3")
         self.assertEqual(args[2]["price_text"], "399 kr")
         self.assertEqual(args[2]["outcome"], "lookup_only")
 

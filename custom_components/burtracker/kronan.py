@@ -2,6 +2,7 @@
 import asyncio
 from collections import OrderedDict
 import time
+import hashlib
 from urllib.parse import quote
 
 import aiohttp
@@ -28,7 +29,7 @@ def parse_product(payload):
 
 
 class KronanRetailer:
-    def __init__(self, session, token):
+    def __init__(self, session, token, increment_store=None):
         self.session = session
         self.token = token.strip()
         self.cache = OrderedDict()
@@ -36,6 +37,8 @@ class KronanRetailer:
         self.retry_after = 0.0
         self.list_lock = asyncio.Lock()
         self.list_token = None
+        self.increment_store = increment_store
+        self.increments = None
 
     async def lookup(self, barcode):
         if not self.token:
@@ -154,29 +157,77 @@ class KronanRetailer:
             # A create may have reached the server. Next attempt searches first.
             raise LookupFailure("write_uncertain") from err
 
-    async def add_to_shopping_list(self, product):
-        """Ensure SKU is present without changing the quantity of existing items."""
+
+    @staticmethod
+    def _quantity(result, sku):
+        if not isinstance(result, dict) or not isinstance(result.get("items"), list):
+            raise LookupFailure("list_failed")
+        matches = []
+        for item in result["items"]:
+            if not isinstance(item, dict) or not isinstance(item.get("product"), dict):
+                raise LookupFailure("list_failed")
+            if item["product"].get("sku") == sku:
+                quantity = item.get("quantity")
+                if type(quantity) is not int or not 0 <= quantity <= 10000:
+                    raise LookupFailure("list_failed")
+                matches.append(quantity)
+        if len(matches) > 1:
+            raise LookupFailure("list_failed")
+        return matches[0] if matches else 0
+
+    async def _save_increments(self):
+        if self.increment_store is not None:
+            await self.increment_store.async_save(self.increments)
+
+    async def add_to_shopping_list(self, product, request_key):
+        """Increment once per request. Never automatically replay an uncertain write."""
+        if not request_key:
+            raise LookupFailure("request_required")
+        key = hashlib.sha256((self.token + "\0" + request_key).encode()).hexdigest()
         try:
             async with asyncio.timeout(12):
                 async with self.list_lock:
+                    if self.increments is None:
+                        self.increments = (await self.increment_store.async_load()
+                                           if self.increment_store is not None else None) or {}
+                    previous = self.increments.get(key)
+                    if previous:
+                        if previous["sku"] != product.sku:
+                            raise LookupFailure("request_conflict")
+                        if previous["state"] != "confirmed":
+                            raise LookupFailure("write_uncertain")
+                        return previous["quantity"]
                     token = await self._ensure_list()
+                    path = f"/product-lists/{quote(token, safe='')}/"
+                    current = await self._list_request("GET", path)
+                    quantity = self._quantity(current, product.sku) + 1
+                    if quantity > 10000:
+                        raise LookupFailure("quantity_limit")
+                    # Write-ahead record protects against timeout/restart ambiguity.
+                    self.increments[key] = {"sku": product.sku, "state": "uncertain",
+                                            "quantity": quantity}
+                    await self._save_increments()
                     result = await self._list_request(
-                        "POST", f"/product-lists/{quote(token, safe='')}/batch-add-items/",
-                        json={"skus": [product.sku]},
+                        "POST", path + "update-item/",
+                        json={"sku": product.sku, "quantity": quantity},
                     )
-                    if not isinstance(result, dict) or not isinstance(result.get("items"), list):
+                    try:
+                        confirmed = self._quantity(result, product.sku)
+                    except LookupFailure as err:
+                        raise LookupFailure("write_uncertain") from err
+                    if confirmed != quantity:
                         raise LookupFailure("write_uncertain")
-                    if not any(
-                        isinstance(item, dict) and isinstance(item.get("product"), dict)
-                        and item["product"].get("sku") == product.sku
-                        and type(item.get("quantity")) is int and item["quantity"] > 0
-                        for item in result["items"]
-                    ):
-                        raise LookupFailure("write_uncertain")
-                    return "kronan_added"
+                    # Keep memory uncertain too if confirmation cannot be persisted.
+                    self.increments[key]["state"] = "confirmed"
+                    try:
+                        await self._save_increments()
+                    except BaseException:
+                        self.increments[key]["state"] = "uncertain"
+                        raise
+                    return quantity
         except LookupFailure as err:
             if err.status == "list_missing":
                 self.list_token = None
             raise
-        except TimeoutError as err:
+        except (TimeoutError, OSError) as err:
             raise LookupFailure("write_uncertain") from err
