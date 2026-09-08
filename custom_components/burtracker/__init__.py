@@ -17,7 +17,7 @@ from .retailer import LookupFailure
 from .model import ShoppingList, parse_trackers, validate_scan
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS = [Platform.TODO]
+PLATFORMS = [Platform.TODO, Platform.SENSOR]
 
 
 class Household:
@@ -39,19 +39,19 @@ class Household:
     async def async_load(self):
         data = await self.store.async_load()
         if data is not None:
-            self.model = ShoppingList(data["items"])
+            self.model = ShoppingList(data["items"], data.get("spoiled", []))
 
     async def async_mutate(self, method, *args):
         async with self.lock:
-            candidate = ShoppingList(deepcopy(self.model.items))
+            candidate = ShoppingList(deepcopy(self.model.items), deepcopy(self.model.spoiled))
             result = getattr(candidate, method)(*args)
-            if candidate.items != self.model.items:
-                await self.store.async_save({"items": candidate.items})
+            if candidate.items != self.model.items or candidate.spoiled != self.model.spoiled:
+                await self.store.async_save({"items": candidate.items, "spoiled": candidate.spoiled})
                 self.model = candidate
                 async_dispatcher_send(self.hass, self.signal)
             return result
 
-    async def async_reply(self, tracker, barcode, request_id, status, name=""):
+    async def async_reply(self, tracker, barcode, request_id, status, name="", price_text="", outcome="added"):
         """Use the existing ESPHome connection, with no additional API client."""
         if not request_id or self.latest_request.get(tracker) != request_id:
             return
@@ -59,11 +59,15 @@ class Household:
         if not self.hass.services.has_service("esphome", action):
             _LOGGER.debug("Tracker feedback action unavailable: %s", action)
             return
-        try:
-            await self.hass.services.async_call("esphome", action, {
+        payload = {
                 "request_id": request_id, "barcode": barcode,
                 "lookup_status": status, "product_name": name,
-            }, blocking=True)
+        }
+        if self.hass.services.has_service("esphome", action + "_v2"):
+            action += "_v2"
+            payload.update(price_text=price_text, outcome=outcome)
+        try:
+            await self.hass.services.async_call("esphome", action, payload, blocking=True)
         except Exception:
             _LOGGER.warning("Could not deliver tracker feedback to %s", tracker)
 
@@ -77,25 +81,41 @@ class Household:
         if not isinstance(request_id, str) or len(request_id) > 128:
             _LOGGER.debug("Ignoring scan with invalid request ID")
             return
+        intent = event.data["intent"]
+        if intent == "spoiled" and not request_id:
+            _LOGGER.debug("Ignoring spoilage without request ID")
+            return
         self.latest_request[tracker] = request_id
         try:
-            uid, outcome = await self.async_mutate(
-                "scan", barcode, tracker, dt_util.utcnow().isoformat()
-            )
+            uid, outcome = "", "lookup_only"
+            if intent == "shopping":
+                uid, outcome = await self.async_mutate(
+                    "scan", barcode, tracker, dt_util.utcnow().isoformat()
+                )
+            elif intent == "spoiled":
+                uid, outcome = await self.async_mutate(
+                    "report_spoiled", barcode, tracker, request_id, dt_util.utcnow().isoformat()
+                )
         except Exception:
             _LOGGER.exception("Could not persist shopping scan")
-            await self.async_reply(tracker, barcode, request_id, "save_failed")
+            await self.async_reply(tracker, barcode, request_id, "save_failed", outcome="save_failed")
             return
 
         name = ""
+        price_text = ""
         try:
             product = await self.retailer.lookup(barcode)
             if product is None:
                 status = "not_found"
             else:
-                saved = await self.async_mutate(
-                    "resolve", uid, asdict(product), dt_util.utcnow().isoformat()
-                )
+                saved = True
+                if intent != "price":
+                    saved = await self.async_mutate(
+                        "resolve" if intent == "shopping" else "resolve_spoiled",
+                        uid, asdict(product), dt_util.utcnow().isoformat()
+                    )
+                if product.price_isk is not None:
+                    price_text = f"{product.price_isk:,} kr".replace(",", ".")
                 status = "resolved" if saved else "item_removed"
                 name = product.name if saved else ""
         except LookupFailure as err:
@@ -108,8 +128,9 @@ class Household:
             "tracker": tracker, "barcode": barcode, "request_id": request_id,
             "outcome": outcome, "item_uid": uid,
             "lookup_status": status, "product_name": name,
+            "intent": intent, "price_text": price_text,
         })
-        await self.async_reply(tracker, barcode, request_id, status, name)
+        await self.async_reply(tracker, barcode, request_id, status, name, price_text, outcome)
 
 
 async def async_setup_entry(hass, entry):

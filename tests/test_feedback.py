@@ -1,5 +1,6 @@
 """Test HA-boundary behavior with small in-memory stand-ins, not a real HA."""
 import asyncio
+from datetime import datetime, timezone
 import importlib.util
 from pathlib import Path
 import re
@@ -18,11 +19,11 @@ def load_household():
     ):
         modules[name] = types.ModuleType(name)
     modules["homeassistant.core"].callback = lambda f: f
-    modules["homeassistant.const"].Platform = types.SimpleNamespace(TODO="todo")
+    modules["homeassistant.const"].Platform = types.SimpleNamespace(TODO="todo", SENSOR="sensor")
     modules["homeassistant.helpers.aiohttp_client"].async_get_clientsession = Mock()
     modules["homeassistant.helpers.dispatcher"].async_dispatcher_send = Mock()
     modules["homeassistant.helpers.storage"].Store = Mock()
-    modules["homeassistant.util"].dt = types.SimpleNamespace()
+    modules["homeassistant.util"].dt = types.SimpleNamespace(utcnow=lambda: datetime.now(timezone.utc))
     modules["homeassistant.util"].slugify = lambda s: re.sub(r"[^a-z0-9_]", "_", s)
     base = Path(__file__).resolve().parents[1] / "custom_components/burtracker"
     spec = importlib.util.spec_from_file_location(
@@ -42,8 +43,13 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
     def make(self):
         h = object.__new__(module.Household)
         h.hass = types.SimpleNamespace(services=types.SimpleNamespace(
-            has_service=Mock(return_value=True), async_call=AsyncMock(),
+            has_service=Mock(side_effect=lambda domain, action: not action.endswith("_v2")), async_call=AsyncMock(),
         ))
+        h.hass.bus = types.SimpleNamespace(async_fire=Mock())
+        h.trackers = {"kitchen", "bin"}
+        product_class = module.KronanRetailer.lookup.__globals__["Product"]
+        h.retailer = types.SimpleNamespace(lookup=AsyncMock(
+            return_value=product_class("kronan", "sku-1", "Milk", 399)))
         h.latest_request = {"kitchen": "boot-2"}
         h.store = types.SimpleNamespace(async_save=AsyncMock())
         h.model = module.ShoppingList()
@@ -68,6 +74,7 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_old_firmware_missing_action_is_tolerated(self):
         h = self.make()
+        h.hass.services.has_service.side_effect = None
         h.hass.services.has_service.return_value = False
         await h.async_reply("kitchen", "123", "boot-2", "resolved", "Milk")
         h.hass.services.async_call.assert_not_awaited()
@@ -88,6 +95,44 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(h.model.items), 1)
         self.assertEqual({r[1] for r in results}, {"added", "already_present"})
         h.store.async_save.assert_awaited_once()
+
+    async def test_price_mode_does_not_write_shopping_or_spoilage(self):
+        h = self.make()
+        await h.async_scan(types.SimpleNamespace(data={
+            "schema_version": "1", "tracker": "kitchen", "barcode": "00123",
+            "intent": "price", "request_id": "boot-3",
+        }))
+        h.store.async_save.assert_not_awaited()
+        self.assertEqual(h.model.items, [])
+        self.assertEqual(h.model.spoiled, [])
+        event = h.hass.bus.async_fire.call_args.args[1]
+        self.assertEqual(event["price_text"], "399 kr")
+        self.assertEqual(event["outcome"], "lookup_only")
+
+    async def test_spoilage_does_not_add_to_shopping_and_deduplicates_retry(self):
+        h = self.make()
+        event = types.SimpleNamespace(data={
+            "schema_version": "1", "tracker": "kitchen", "barcode": "00123",
+            "intent": "spoiled", "request_id": "boot-3",
+        })
+        await h.async_scan(event)
+        await h.async_scan(event)
+        self.assertEqual(h.model.items, [])
+        self.assertEqual(len(h.model.spoiled), 1)
+        self.assertIsNone(h.model.spoiled[0]["quantity"])
+        self.assertEqual(h.model.spoiled[0]["product_name"], "Milk")
+
+    async def test_new_reply_has_price_and_mode_outcome(self):
+        h = self.make()
+        h.hass.services.has_service.side_effect = None
+        h.hass.services.has_service.return_value = True
+        await h.async_reply("kitchen", "123", "boot-2", "resolved", "Milk",
+                            "399 kr", "lookup_only")
+        args = h.hass.services.async_call.call_args.args
+        self.assertEqual(args[1], "kitchen_burtracker_result_v2")
+        self.assertEqual(args[2]["price_text"], "399 kr")
+        self.assertEqual(args[2]["outcome"], "lookup_only")
+
 
 
 if __name__ == "__main__":

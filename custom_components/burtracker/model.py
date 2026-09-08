@@ -19,7 +19,7 @@ def validate_scan(data, trackers):
     """Reject unsupported events without converting barcodes to numbers."""
     if str(data.get("schema_version")) != "1":
         raise ValueError("Unsupported schema version")
-    if data.get("intent") != "shopping":
+    if data.get("intent") not in ("shopping", "spoiled", "price"):
         raise ValueError("Unsupported intent")
     tracker = data.get("tracker")
     if not isinstance(tracker, str) or tracker not in trackers:
@@ -35,8 +35,9 @@ def validate_scan(data, trackers):
 class ShoppingList:
     """JSON-serializable list, independent of transport and retailer lookup."""
 
-    def __init__(self, items=None):
+    def __init__(self, items=None, spoiled=None):
         self.items = items if items is not None else []
+        self.spoiled = spoiled if spoiled is not None else []
 
     def scan(self, barcode, tracker, timestamp):
         matches = [item for item in self.items if item.get("barcode") == barcode]
@@ -96,5 +97,32 @@ class ShoppingList:
             resolution="resolved", provider=product["provider"],
             sku=product["sku"], product_name=product["name"],
             resolved_at=timestamp,
+        )
+        return True
+
+
+    def report_spoiled(self, barcode, tracker, request_id, timestamp):
+        if not request_id:
+            raise ValueError("Spoilage requires a request ID")
+        for report in self.spoiled:
+            if report["tracker"] == tracker and report["request_id"] == request_id:
+                if report["barcode"] != barcode:
+                    raise ValueError("Request ID reused for a different barcode")
+                return report["uid"], "already_reported"
+        uid = uuid4().hex
+        self.spoiled.append({
+            "uid": uid, "barcode": barcode, "tracker": tracker,
+            "request_id": request_id, "reported_at": timestamp,
+            "quantity": None, "resolution": "unresolved",
+        })
+        return uid, "reported"
+
+    def resolve_spoiled(self, uid, product, timestamp):
+        report = next((r for r in self.spoiled if r["uid"] == uid), None)
+        if report is None:
+            return False
+        report.update(
+            provider=product["provider"], sku=product["sku"],
+            product_name=product["name"], resolution="resolved", resolved_at=timestamp,
         )
         return True

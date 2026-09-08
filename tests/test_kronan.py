@@ -106,6 +106,14 @@ class ProviderTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(LookupFailure):
                 await client.lookup("123")
 
+    def test_catalog_price_and_discount(self):
+        base = {"sku": "1", "name": "Milk", "price": 499}
+        self.assertEqual(parse_product(base).price_isk, 499)
+        self.assertEqual(parse_product(base | {"onSale": True, "discountedPrice": 399}).price_isk, 399)
+        self.assertIsNone(parse_product(base | {"price": None}).price_isk)
+        self.assertIsNone(parse_product(base | {"price": True}).price_isk)
+        self.assertIsNone(parse_product(base | {"price": -1}).price_isk)
+
     def test_unicode_product_name(self):
         self.assertEqual(parse_product({"sku": "1", "name": "Mj\u00f3lk"}).name,
                          "Mj\u00f3lk")

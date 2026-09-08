@@ -5,6 +5,7 @@ esphome:
   includes:
     - <M5Unified.h>
     - <esp_system.h>
+    - burtracker_ui.h
     - <M5ModuleQRCode.h>
 
   libraries:
@@ -33,11 +34,7 @@ esphome:
 
           M5.Display.setRotation(3);
           M5.Display.setBrightness(160);
-          M5.Display.fillScreen(TFT_BLACK);
-          M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-          M5.Display.setTextSize(2);
-          M5.Display.setCursor(10, 10);
-          M5.Display.println("Starting scanner...");
+          burtracker::screen.render();
 
           id(scanner) = new M5ModuleQRCode();
 
@@ -49,7 +46,8 @@ esphome:
 
           if (!id(scanner)->begin()) {
             ESP_LOGE("scanner", "Module I2C initialization failed");
-            M5.Display.println("Module not found");
+            burtracker::screen.title = "Scanner not found";
+            burtracker::screen.render();
             delete id(scanner);
             id(scanner) = nullptr;
             return;
@@ -97,7 +95,8 @@ esphome:
           if (!valid) {
             ESP_LOGE("scanner", "Invalid firmware reply: %u bytes",
                      static_cast<unsigned>(response.size()));
-            M5.Display.println("No valid UART reply");
+            burtracker::screen.title = "No scanner response";
+            burtracker::screen.render();
             return;
           }
 
@@ -115,12 +114,7 @@ esphome:
           id(scanner)->setTriggerMode(
               QRCodeM14::TRIGGER_MODE_MOTION_SENSING);
 
-          M5.Display.fillScreen(TFT_BLACK);
-          M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-          M5.Display.setCursor(10, 10);
-          M5.Display.println("Show a barcode");
-          M5.Display.setCursor(10, 200);
-          M5.Display.println("Scene detection active");
+          burtracker::screen.select(0);
 
           id(scanner_ready) = true;
           ESP_LOGI("scanner", "Scene-change scanning ready");
@@ -171,17 +165,21 @@ interval:
     then:
       - lambda: |-
           M5.update();
+          if (id(scanner_ready)) {
+            // Core2 touch-strip buttons use physical coordinates: C is left at rotation 3.
+            int selected = M5.BtnC.wasPressed() ? 0 :
+                           M5.BtnB.wasPressed() ? 1 : M5.BtnA.wasPressed() ? 2 : -1;
+            if (selected >= 0) {
+              id(awaiting_reply) = false;
+              burtracker::screen.select(selected);
+            }
+          }
           if (id(awaiting_reply) && millis() - id(request_started) > 15000) {
             id(awaiting_reply) = false;
-            M5.Display.fillScreen(TFT_BLACK);
-            M5.Display.setTextColor(TFT_YELLOW, TFT_BLACK);
-            M5.Display.setCursor(10, 10);
-            M5.Display.println("No HA reply");
-            M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-            M5.Display.setCursor(10, 65);
-            M5.Display.println(id(active_barcode).c_str());
-            M5.Display.setCursor(10, 200);
-            M5.Display.println("List status unknown");
+            burtracker::screen.title = "No reply from HA";
+            burtracker::screen.detail = "Result is unknown";
+            burtracker::screen.footer = "CHECK CONNECTION / TRY AGAIN";
+            burtracker::screen.render();
           }
 
           if (!id(scanner_ready)) return;
@@ -199,18 +197,21 @@ interval:
             barcode.pop_back();
           }
           if (barcode.empty()) return;
+          if (burtracker::screen.mode == 1 && !burtracker::screen.spoil_armed) return;
 
           // Additional display/log protection against rapid repeats.
           static std::string last_barcode;
           static uint32_t last_displayed = 0;
+          static int last_mode = -1;
           const uint32_t now = millis();
 
-          if (barcode == last_barcode &&
+          if (barcode == last_barcode && last_mode == burtracker::screen.mode &&
               now - last_displayed < 3000) {
             return;
           }
 
           last_barcode = barcode;
+          last_mode = burtracker::screen.mode;
           last_displayed = now;
 
           ESP_LOGI("scanner", "Barcode: %s", barcode.c_str());
@@ -221,21 +222,9 @@ interval:
           id(active_barcode) = barcode;
           id(awaiting_reply) = true;
           id(request_started) = now;
-          id(publish_scan)->execute(barcode, id(active_request));
-
-          M5.Display.fillScreen(TFT_BLACK);
-          M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-          M5.Display.setTextSize(2);
-          M5.Display.setCursor(10, 10);
-          M5.Display.println("Looking up product...");
-
-          M5.Display.setTextColor(TFT_GREEN, TFT_BLACK);
-          M5.Display.setCursor(10, 65);
-          M5.Display.println(barcode.c_str());
-
-          M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-          M5.Display.setCursor(10, 200);
-          M5.Display.println("Waiting for HA");
+          burtracker::screen.waiting();
+          id(publish_scan)->execute(barcode, id(active_request),
+                                   std::string(burtracker::screen.intent()));
 
 # Home Assistant connects through the native ESPHome API.
 wifi:
@@ -259,33 +248,21 @@ api:
             if (!id(awaiting_reply) || request_id != id(active_request) ||
                 barcode != id(active_barcode)) return;
             id(awaiting_reply) = false;
-            M5.Display.fillScreen(TFT_BLACK);
-            M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-            M5.Display.setCursor(10, 10);
-            if (lookup_status == "resolved") {
-              M5.Display.println("On shopping list");
-              M5.Display.setTextColor(TFT_GREEN, TFT_BLACK);
-              M5.Display.setTextSize(1);
-              M5.Display.setFont(&fonts::efontJA_16);
-              M5.Display.setTextWrap(true);
-              M5.Display.setCursor(10, 55);
-              M5.Display.println(product_name.c_str());
-              M5.Display.setFont(&fonts::Font0);
-              M5.Display.setTextSize(2);
-            } else {
-              if (lookup_status == "not_found") M5.Display.println("Product not found");
-              else if (lookup_status == "auth_required") M5.Display.println("Set Kronan token");
-              else if (lookup_status == "rate_limited") M5.Display.println("Lookup rate limited");
-              else if (lookup_status == "save_failed") M5.Display.println("List save failed");
-              else if (lookup_status == "item_removed") M5.Display.println("Item removed");
-              else M5.Display.println("Lookup unavailable");
-              M5.Display.setTextColor(TFT_YELLOW, TFT_BLACK);
-              M5.Display.setCursor(10, 65);
-              M5.Display.println(barcode.c_str());
-            }
-            M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
-            M5.Display.setCursor(10, 200);
-            M5.Display.println("Show another barcode");
+            burtracker::screen.result(lookup_status, product_name, "", "added");
+    - action: burtracker_result_v2
+      variables:
+        request_id: string
+        barcode: string
+        lookup_status: string
+        product_name: string
+        price_text: string
+        outcome: string
+      then:
+        - lambda: |-
+            if (!id(awaiting_reply) || request_id != id(active_request) ||
+                barcode != id(active_barcode)) return;
+            id(awaiting_reply) = false;
+            burtracker::screen.result(lookup_status, product_name, price_text, outcome);
 
 ota:
   - platform: esphome
@@ -298,6 +275,7 @@ script:
     parameters:
       barcode: string
       request_id: string
+      scan_intent: string
     then:
       - homeassistant.event:
           event: esphome.burtracker_scan
@@ -305,7 +283,7 @@ script:
             schema_version: "1"
             tracker: !lambda 'return App.get_name();'
             barcode: !lambda 'return barcode;'
-            intent: "shopping"
+            intent: !lambda 'return scan_intent;'
             request_id: !lambda 'return request_id;'
 
 # Diagnostic entities; business logic should consume scan events, not state changes.

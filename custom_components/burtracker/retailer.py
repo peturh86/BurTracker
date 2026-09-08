@@ -8,6 +8,7 @@ class Product:
     provider: str
     sku: str
     name: str
+    price_isk: int | None = None
 
 
 class LookupFailure(Exception):

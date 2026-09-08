@@ -23,7 +23,7 @@ class ShoppingTests(unittest.TestCase):
     def test_reject_bad_payloads(self):
         changes = [
             {"schema_version": "2"}, {"intent": "consumed"},
-            {"intent": "spoiled"}, {"tracker": "unknown"},
+            {"intent": "invalid"}, {"tracker": "unknown"},
             {"barcode": 12345}, {"barcode": ""}, {"barcode": "   "},
             {"barcode": "abc\n"}, {"barcode": "x" * 129},
         ]
@@ -92,6 +92,13 @@ class ShoppingTests(unittest.TestCase):
         self.assertFalse(self.list.resolve(
             uid, {"provider": "kronan", "sku": "77", "name": "Milk"}, "t2"))
         self.assertEqual(self.list.items, [])
+
+    def test_spoilage_round_trip_and_distinct_requests(self):
+        self.list.report_spoiled("123", "kitchen", "r1", "t1")
+        restored = model.ShoppingList([], json.loads(json.dumps(self.list.spoiled)))
+        self.assertEqual(restored.report_spoiled("123", "kitchen", "r1", "t2")[1], "already_reported")
+        restored.report_spoiled("123", "kitchen", "r2", "t3")
+        self.assertEqual(len(restored.spoiled), 2)
 
     def test_tracker_options(self):
         self.assertEqual(model.parse_trackers(" kitchen, bin, kitchen "),

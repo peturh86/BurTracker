@@ -21,7 +21,10 @@ def parse_product(payload):
     if (not isinstance(name, str) or not name.strip() or len(name) > 128
             or any(ord(c) < 32 for c in name)):
         raise LookupFailure()
-    return Product("kronan", sku, name.strip())
+    price = payload.get("discountedPrice") if payload.get("onSale") is True else payload.get("price")
+    if type(price) is not int or price < 0:
+        price = None
+    return Product("kronan", sku, name.strip(), price)
 
 
 class KronanRetailer:
@@ -66,7 +69,7 @@ class KronanRetailer:
                             product = parse_product(await response.json())
                         else:
                             raise LookupFailure()
-                    self.cache[barcode] = (time.monotonic() + (3600 if product else 60), product)
+                    self.cache[barcode] = (time.monotonic() + (300 if product else 60), product)
                     self.cache.move_to_end(barcode)
                     while len(self.cache) > 256:
                         self.cache.popitem(last=False)

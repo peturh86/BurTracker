@@ -3,12 +3,12 @@
 ## Install or update
 
 1. In HACS > Custom repositories add https://github.com/peturh86/BurTracker as Integration.
-2. Download/update BurTracker to 0.2.0 and restart Home Assistant.
+2. Download/update BurTracker to 0.3.0 and restart Home Assistant.
 3. Under Settings > Devices & services, add BurTracker (or Configure the existing entry).
 4. Enter exact ESPHome tracker names separated by commas, e.g. burtracker-hardware-test.
 5. Enter your Krónan access token in the password field. An empty field retains the
    existing token. Tokens are kept in HA configuration, never in firmware.
-6. Flash the updated m5stackcore2.yaml; preserve your local secrets.yaml.
+6. Place burtracker_ui.h beside m5stackcore2.yaml and flash the updated YAML; preserve your local secrets.yaml.
 7. Enable "Allow the device to perform Home Assistant actions" in the ESPHome device configuration.
 8. Open To-do lists > BurTracker Shopping and scan a product.
 
@@ -49,12 +49,13 @@ small-screen label.
 - Repeated scans keep one active entry. Completing then scanning reopens that entry.
 - Deleting an item while a lookup is pending does not recreate it.
 - Completing an item does not imply a purchase or alter inventory.
-- Consumption/spoilage events remain unsupported and do not add shopping entries.
+- Spoiled mode records a report with unknown quantity; it never adds to shopping.
+- Price mode performs lookup without changing shopping or spoilage records.
 
 The provider uses an asynchronous HA HTTP session, a ten-second total lookup budget,
-bounded in-memory cache (one hour for matches, one minute for misses), and backoff on
+bounded in-memory cache (five minutes for matches, one minute for misses), and backoff on
 429. It only performs product GET requests. No checkout/cart writes, purchase import,
-or price display is implemented.
+is implemented.
 
 ## Firmware and feedback
 
@@ -118,3 +119,39 @@ credentials: application image approximately 1.54 MB, 18.9% of its flash partiti
 The build uses the same YAML except substituted test credentials. This validates
 compilation, not live network connectivity, authenticated API success, or physical
 display rendering. No dummy-credential firmware binary is distributed.
+
+## Three-mode UI (0.3.0)
+
+The 320x240 display has three colored tabs and a shared product/price card:
+green SHOP, red SPOILED, yellow PRICE. The active tab is filled and has a pointer.
+At rotation 3 the touch-button strip is above the display: physical C selects the
+left green tab, B selects the center red tab, A selects the right yellow tab.
+
+Shopping and Price remain selected until another button is pressed; Shopping is
+the boot default. Red arms one spoilage scan. Press red again for each additional
+report. Automatic repeated reads do not rearm it. Switching modes clears the
+pending display request, so an older reply cannot replace the new mode screen.
+
+Download both m5stackcore2.yaml and burtracker_ui.h into the same ESPHome directory.
+The release includes a source ZIP with both and secrets.example.yaml. Preserve your
+real secrets.yaml. Update the HA integration as well as firmware before using modes.
+
+HA accepts shopping, spoiled, and price intents. Spoilage requires a request ID;
+retries with the same tracker/request ID do not duplicate reports. Reports are stored
+beside items in HA storage and exposed through the BurTracker Spoilage Reports sensor
+(count plus last_report attributes). The count means reports, not units or packages.
+There is no waste-cost calculation, purchase inference, or inventory deduction.
+
+Prices are integer ISK: discountedPrice when onSale is true, otherwise price.
+Missing/invalid prices remain unavailable, never zero. Cached values can be up to
+five minutes old; they are catalog prices, not a guarantee of the checkout price.
+Price-only scans do not persist grocery records.
+
+The new burtracker_result_v2 action adds price_text and outcome. The v0.2 action
+remains for older integrations. Backend falls back to that action for old firmware.
+Legacy firmware only supports shopping; old HA releases cannot handle new intents.
+
+Validation: 32 automated tests pass, including mode isolation, report deduplication,
+discounted/missing prices, and reply routing. Full Core2 build passes on ESPHome
+2026.7.3 with dummy credentials (~19% application flash). Physical alignment,
+colors, and live authenticated prices still need device verification.
