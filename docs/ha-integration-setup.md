@@ -1,157 +1,128 @@
-# BurTracker: shopping list and Krónan product lookup
+# BurTracker setup (0.4.0)
 
-## Install or update
+## Install/update
 
-1. In HACS > Custom repositories add https://github.com/peturh86/BurTracker as Integration.
-2. Download/update BurTracker to 0.3.0 and restart Home Assistant.
-3. Under Settings > Devices & services, add BurTracker (or Configure the existing entry).
-4. Enter exact ESPHome tracker names separated by commas, e.g. burtracker-hardware-test.
-5. Enter your Krónan access token in the password field. An empty field retains the
-   existing token. Tokens are kept in HA configuration, never in firmware.
-6. Place burtracker_ui.h beside m5stackcore2.yaml and flash the updated YAML; preserve your local secrets.yaml.
-7. Enable "Allow the device to perform Home Assistant actions" in the ESPHome device configuration.
-8. Open To-do lists > BurTracker Shopping and scan a product.
+1. Add https://github.com/peturh86/BurTracker in HACS Custom repositories, type Integration.
+2. Download/update to 0.4.0 and restart Home Assistant.
+3. Configure BurTracker with your exact ESPHome tracker names (comma-separated).
+4. Enter your Krónan access token. Blank input preserves an existing token.
+5. The integration finds a product list named exactly HA in that token's user/customer
+   group. If absent after a complete search, it creates HA.
+6. Place m5stackcore2.yaml and burtracker_ui.h together in the remote ESPHome
+   configuration directory, alongside your existing secrets.yaml, and flash.
+7. Enable "Allow the device to perform Home Assistant actions" for the ESPHome device.
 
-HACS is usable with HA Container. If it is not installed, perform its one-time
-installation into the persistent volume mapped to /config:
-https://www.hacs.xyz/docs/use/download/download/
+The firmware source ZIP includes both firmware files and a secrets.example.yaml.
+No real credentials or compiled firmware with dummy credentials are distributed.
+HACS updates the integration, not firmware.
 
-For manual installation, copy custom_components/burtracker into
-/config/custom_components/burtracker and restart HA. The release ZIP includes that path.
+For HA Container, HACS installs into the persistent configuration volume mapped to
+/config. Manual installation: copy custom_components/burtracker into
+/config/custom_components/burtracker and restart.
 
-## Krónan authentication
+## Shopping destination
 
-The public schema is accessible without credentials, but the product lookup requires
-Authorization: AccessToken <token>. An unauthenticated live request was verified to
-return 401 on 2026-09-07.
+Green Shopping resolves a barcode, then adds its SKU to the Krónan product list HA.
+This is a product list, not the active checkout. No checkout/order/payment operations
+are performed.
 
-According to Krónan's API schema, access tokens are created in User or Customer group
-settings and require an Auðkenni login. Enter only the token value in BurTracker.
-Do not paste tokens into issue reports or chat.
+The API's batch-add operation skips products already present, preserving their
+quantities. Every shopping scan checks with Krónan; a local cache cannot suppress
+re-adding an item that you removed from Krónan.
 
-Endpoint: GET https://api.kronan.is/api/v1/products/barcode/{barcode}/
-Schema: https://api.kronan.is/api/v1/schema/
-Interactive documentation: https://api.kronan.is/api/v1/schema/swagger-ui/
+The device says success only after the API returns the SKU in the product list with
+positive quantity. A timeout or ambiguous server response is unconfirmed, not success
+or guaranteed failure. Check Krónan in that case. Retrying batch-add is safe for
+existing quantities.
 
-The endpoint directly returns PublicProductDetail. We use its name for the display
-and retain its sku as the retailer product identity. We do not use fuzzy search or
-guess the name from the barcode. The longer description field is not used as the
-small-screen label.
+Initialization searches all returned pages before creation. Failed/incomplete searches
+never trigger creation. Duplicate HA list names produce an explicit error instead of
+choosing one arbitrarily. Rename the unwanted duplicate in Krónan and reload BurTracker.
 
-## What happens on a scan
+List discovery/creation is serialized across trackers within this integration instance.
+Separate HA installations can still race to create a list; Krónan's schema does not
+document name uniqueness or a create idempotency key. The next discovery detects duplicates.
 
-- The household list first durably ensures an entry exists for the scanned barcode.
-- Krónan resolves the exact barcode. A match updates the unresolved list label and
-  returns the product name to that scanner's screen.
-- A manual list label is preserved. Product name and SKU are stored separately.
-- A 404 stays unresolved. Authentication, rate limiting, and lookup failures are
-  distinct from not found.
-- Repeated scans keep one active entry. Completing then scanning reopens that entry.
-- Deleting an item while a lookup is pending does not recreate it.
-- Completing an item does not imply a purchase or alter inventory.
-- Spoiled mode records a report with unknown quantity; it never adds to shopping.
-- Price mode performs lookup without changing shopping or spoilage records.
+If initialization fails, the integration remains available for local reports and
+price lookup; shopping scans retry discovery. A deleted cached list is invalidated
+on 404 and rediscovered on the next shopping scan. Token changes reload the provider,
+so a cached list from the prior account is not reused.
 
-The provider uses an asynchronous HA HTTP session, a ten-second total lookup budget,
-bounded in-memory cache (five minutes for matches, one minute for misses), and backoff on
-429. It only performs product GET requests. No checkout/cart writes, purchase import,
-is implemented.
+## Unresolved scans and existing local data
 
-## Firmware and feedback
+Unknown products cannot be added by SKU. They are preserved in the local
+BurTracker Unresolved Scans to-do list for identification.
 
-Updated inbound event:
+Previously recorded local shopping entries are preserved. This update does not
+bulk-upload or delete them, and the local list is not a synchronized Krónan mirror.
+Its entity ID may retain the old name, e.g. todo.burtracker_shopping.
+Renaming or checking off local entries does not modify Krónan.
 
-    schema_version: "1"
-    tracker: burtracker-hardware-test
-    barcode: "0012345678905"
-    intent: shopping
-    request_id: "<random-boot-session>-<scan-sequence>"
+## Other modes and UI
 
-Old firmware without request_id can still populate/enrich the list, but cannot
-receive correlated display feedback. Update both HA integration and firmware.
+Tabs align with the upside-down display's top button edge:
+- Left green SHOP: physical C button, persistent selection.
+- Center red SPOILED: physical B button, one report armed per press.
+- Right yellow PRICE: physical A button, persistent selection.
 
-Firmware exposes an ESPHome action named burtracker_result with string fields
-request_id, barcode, lookup_status, product_name. For the default tracker HA registers
-esphome.burtracker_hardware_test_burtracker_result.
+Spoiled records an explicit report with unknown quantity and never adds to either
+shopping list. Repeated transport requests with the same tracker/request ID are
+deduplicated. Reports survive restart in HA storage. BurTracker Spoilage Reports
+exposes the report count and last report; counts are not packages or units.
+There is no inventory deduction, purchase inference, or waste-cost calculation.
 
-Replies are accepted only while waiting for the current request, with both request ID
-and barcode matching. After 15 seconds the device shows "No HA reply / List status
-unknown"; late replies are ignored. A decode alone is not displayed as a successful
-list save. No offline queue/replay is implemented.
+Price only looks up the catalog product and changes no grocery records.
+Displayed ISK values use discountedPrice when onSale is true, otherwise price.
+Missing/invalid prices remain unavailable. Matches are cached for up to five minutes;
+catalog prices are not a guarantee of checkout price.
 
-The HA event burtracker.scan_processed includes outcome, lookup_status, item_uid,
-request_id, barcode, tracker, product_name. It is useful for diagnostics.
-Lookup statuses: resolved, not_found, auth_required, rate_limited, lookup_failed,
-item_removed. Storage failure is sent directly as save_failed to the display.
+## Authentication and API
 
-Tracker names are routing filters, not authentication. Other HA users/automations
-with event-bus access can supply those names. Request IDs correlate display replies;
-they do not provide persistent exactly-once processing.
+The API schema is public; operations require Authorization: AccessToken <token>.
+Krónan says access tokens are created in User/Customer group settings with an
+Auðkenni login. Enter only the token value in HA. Tokens never enter firmware.
 
-## Storage and verification
+Endpoints used:
+- GET /api/v1/products/barcode/{barcode}/
+- GET /api/v1/product-lists/ (limit/offset pagination)
+- POST /api/v1/product-lists/ (name: HA)
+- POST /api/v1/product-lists/{token}/batch-add-items/ (skus: [resolved SKU])
 
-HA Store data under .storage/burtracker.<entry_id> survives restart. Mutations are
-serialized and only published after save succeeds. Removing the integration deletes
-its storage. Firmware entities are separate from the BurTracker to-do entity.
+Source: https://api.kronan.is/api/v1/schema/swagger-ui/#/product-lists
+Machine schema: https://api.kronan.is/api/v1/schema/
 
-Smoke test:
-1. Configure a real token and scan a known Krónan product: list and display get a name.
-2. Scan it again: one active list entry remains.
-3. Scan two different products quickly: an older reply must not overwrite the latest.
-4. Try an unknown barcode: an unresolved entry remains and display says not found.
-5. Try without a token: display requests the token; it must not say product not found.
-6. Complete, rename, rescan, and restart HA to verify persisted list behavior.
+## Device contract
 
-Tests use schema-shaped synthetic responses; no real token is available in the
-development environment. Authenticated success, physical font rendering, and HA
-action registration still need the live smoke test.
+Inbound event esphome.burtracker_scan:
+schema_version: "1", tracker: exact node name, barcode: string preserving leading zeros,
+intent: shopping/spoiled/price, request_id: random boot-session plus sequence.
 
-Run portable tests with python -m unittest discover -s tests -v (aiohttp required).
-The provider strategy interface is in retailer.py; Krónan is its first implementation.
-A future application/portal should reuse or migrate the grocery store rather than
-maintain a second independent list.
+Tracker names are routing filters, not authentication. The HA event bus is trusted.
+Request IDs correlate display replies and deduplicate spoilage, not every external
+effect across restarts.
 
-## Build verification for 0.2.0
+HA calls esphome.<node>_burtracker_result_v2 with request_id, barcode, lookup_status,
+product_name, price_text, outcome. The v0.2 action remains a fallback. New firmware
+waits 30 seconds, rejects replies for old requests/modes, and shows unknown status
+after timeout. No offline queue or replay is implemented.
 
-27 automated tests passed (provider, list model, and HA-boundary stand-ins).
-The full Core2 firmware compiled successfully using ESPHome 2026.7.3 with dummy
-credentials: application image approximately 1.54 MB, 18.9% of its flash partition.
-The build uses the same YAML except substituted test credentials. This validates
-compilation, not live network connectivity, authenticated API success, or physical
-display rendering. No dummy-credential firmware binary is distributed.
+HA also emits burtracker.scan_processed for diagnostics, including lookup_status,
+outcome and intent. Shopping outcomes include kronan_added, unresolved, not_added,
+and unconfirmed. Initialization problems appear in HA logs.
 
-## Three-mode UI (0.3.0)
+## Verification
 
-The 320x240 display has three colored tabs and a shared product/price card:
-green SHOP, red SPOILED, yellow PRICE. The active tab is filled and has a pointer.
-At rotation 3 the touch-button strip is above the display: physical C selects the
-left green tab, B selects the center red tab, A selects the right yellow tab.
+Run python -m unittest discover -s tests -v (aiohttp required). Tests simulate API
+responses; no real retailer credentials are present in the development environment.
 
-Shopping and Price remain selected until another button is pressed; Shopping is
-the boot default. Red arms one spoilage scan. Press red again for each additional
-report. Automatic repeated reads do not rearm it. Switching modes clears the
-pending display request, so an older reply cannot replace the new mode screen.
+Live checks:
+1. Configure a token: exactly one HA product list is found or created.
+2. Scan a known product in green: it appears in Krónan HA, with its name on the device.
+3. Scan again: its existing quantity is preserved.
+4. Remove it in Krónan and scan again: it is re-added.
+5. Yellow and red scans never add to Krónan.
+6. An unknown barcode is kept locally, not posted to Krónan.
+7. Restart HA: the same remote list is reused; local spoilage reports remain.
 
-Download both m5stackcore2.yaml and burtracker_ui.h into the same ESPHome directory.
-The release includes a source ZIP with both and secrets.example.yaml. Preserve your
-real secrets.yaml. Update the HA integration as well as firmware before using modes.
-
-HA accepts shopping, spoiled, and price intents. Spoilage requires a request ID;
-retries with the same tracker/request ID do not duplicate reports. Reports are stored
-beside items in HA storage and exposed through the BurTracker Spoilage Reports sensor
-(count plus last_report attributes). The count means reports, not units or packages.
-There is no waste-cost calculation, purchase inference, or inventory deduction.
-
-Prices are integer ISK: discountedPrice when onSale is true, otherwise price.
-Missing/invalid prices remain unavailable, never zero. Cached values can be up to
-five minutes old; they are catalog prices, not a guarantee of the checkout price.
-Price-only scans do not persist grocery records.
-
-The new burtracker_result_v2 action adds price_text and outcome. The v0.2 action
-remains for older integrations. Backend falls back to that action for old firmware.
-Legacy firmware only supports shopping; old HA releases cannot handle new intents.
-
-Validation: 32 automated tests pass, including mode isolation, report deduplication,
-discounted/missing prices, and reply routing. Full Core2 build passes on ESPHome
-2026.7.3 with dummy credentials (~19% application flash). Physical alignment,
-colors, and live authenticated prices still need device verification.
+Release verification: 43 automated tests passed. Full Core2 compilation passed on
+ESPHome 2026.7.3 using dummy credentials; authenticated remote writes remain untested.

@@ -89,9 +89,7 @@ class Household:
         try:
             uid, outcome = "", "lookup_only"
             if intent == "shopping":
-                uid, outcome = await self.async_mutate(
-                    "scan", barcode, tracker, dt_util.utcnow().isoformat()
-                )
+                outcome = "not_added"
             elif intent == "spoiled":
                 uid, outcome = await self.async_mutate(
                     "report_spoiled", barcode, tracker, request_id, dt_util.utcnow().isoformat()
@@ -107,12 +105,18 @@ class Household:
             product = await self.retailer.lookup(barcode)
             if product is None:
                 status = "not_found"
+                if intent == "shopping":
+                    uid, _ = await self.async_mutate(
+                        "scan", barcode, tracker, dt_util.utcnow().isoformat()
+                    )
+                    outcome = "unresolved"
             else:
                 saved = True
-                if intent != "price":
+                if intent == "shopping":
+                    outcome = await self.retailer.add_to_shopping_list(product)
+                elif intent == "spoiled":
                     saved = await self.async_mutate(
-                        "resolve" if intent == "shopping" else "resolve_spoiled",
-                        uid, asdict(product), dt_util.utcnow().isoformat()
+                        "resolve_spoiled", uid, asdict(product), dt_util.utcnow().isoformat()
                     )
                 if product.price_isk is not None:
                     price_text = f"{product.price_isk:,} kr".replace(",", ".")
@@ -120,6 +124,8 @@ class Household:
                 name = product.name if saved else ""
         except LookupFailure as err:
             status = err.status
+            if intent == "shopping" and status == "write_uncertain":
+                outcome = "unconfirmed"
         except Exception:
             _LOGGER.exception("Could not enrich shopping item")
             status = "lookup_failed"
@@ -136,6 +142,13 @@ class Household:
 async def async_setup_entry(hass, entry):
     household = Household(hass, entry)
     await household.async_load()
+    if household.retailer.token:
+        try:
+            await household.retailer.ensure_shopping_list()
+        except LookupFailure as err:
+            # Keep diagnostics, price lookup, and local spoilage available.
+            # Shopping scans retry discovery before any addition.
+            _LOGGER.warning("Kronan HA list initialization: %s", err.status)
     entry.runtime_data = household
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     @callback

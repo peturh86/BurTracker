@@ -22,3 +22,10 @@ class LookupFailure(Exception):
 class Retailer(Protocol):
     async def lookup(self, barcode: str) -> Product | None:
         """Return an exact barcode match, or None for not found."""
+
+
+    async def ensure_shopping_list(self) -> str:
+        """Initialize the household's retailer-owned product list."""
+
+    async def add_to_shopping_list(self, product: Product) -> str:
+        """Ensure a resolved product is present in the retailer list."""

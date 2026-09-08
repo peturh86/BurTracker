@@ -118,6 +118,89 @@ class ProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(parse_product({"sku": "1", "name": "Mj\u00f3lk"}).name,
                          "Mj\u00f3lk")
 
+class ListSession:
+    def __init__(self, responses):
+        self.responses = iter(responses)
+        self.calls = []
+
+    def request(self, method, url, **kwargs):
+        self.calls.append((method, url, kwargs))
+        return next(self.responses)
+
+
+class ProductListTests(unittest.IsolatedAsyncioTestCase):
+    def client(self, *responses):
+        session = ListSession(responses)
+        return KronanRetailer(session, "test-token"), session
+
+    async def test_finds_existing_list_on_later_page(self):
+        client, session = self.client(
+            Response(payload={"count": 2, "results": [{"name": "Other", "token": "other"}]}),
+            Response(payload={"count": 2, "results": [{"name": "HA", "token": "ha-token"}]}),
+        )
+        self.assertEqual(await client.ensure_shopping_list(), "ha-token")
+        self.assertEqual(await client.ensure_shopping_list(), "ha-token")
+        self.assertEqual(len(session.calls), 2)
+        self.assertEqual(session.calls[1][2]["params"]["offset"], 1)
+
+    async def test_creates_once_for_concurrent_initialization(self):
+        client, session = self.client(
+            Response(payload={"count": 0, "results": []}),
+            Response(status=201, payload={"name": "HA", "token": "new-token"}),
+        )
+        self.assertEqual(await asyncio.gather(
+            client.ensure_shopping_list(), client.ensure_shopping_list()),
+            ["new-token", "new-token"])
+        self.assertEqual([c[0] for c in session.calls], ["GET", "POST"])
+        self.assertEqual(session.calls[1][2]["json"]["name"], "HA")
+
+    async def test_incomplete_discovery_never_creates(self):
+        for payload in ({}, {"count": 2, "results": []}):
+            client, session = self.client(Response(payload=payload))
+            with self.assertRaises(LookupFailure):
+                await client.ensure_shopping_list()
+            self.assertEqual(len(session.calls), 1)
+
+    async def test_duplicate_names_do_not_pick_arbitrarily(self):
+        client, session = self.client(Response(payload={
+            "count": 2, "results": [{"name": "HA", "token": "a"}, {"name": "HA", "token": "b"}]}))
+        with self.assertRaises(LookupFailure) as ctx:
+            await client.ensure_shopping_list()
+        self.assertEqual(ctx.exception.status, "list_ambiguous")
+        self.assertEqual(len(session.calls), 1)
+
+    async def test_batch_add_uses_sku_and_requires_confirmation(self):
+        client, session = self.client(Response(payload={
+            "items": [{"product": {"sku": "123"}, "quantity": 2}]}))
+        client.list_token = "ha-token"
+        product = parse_product({"sku": "123", "name": "Milk"})
+        self.assertEqual(await client.add_to_shopping_list(product), "kronan_added")
+        method, url, kwargs = session.calls[0]
+        self.assertEqual(method, "POST")
+        self.assertTrue(url.endswith("/product-lists/ha-token/batch-add-items/"))
+        self.assertEqual(kwargs["json"], {"skus": ["123"]})
+
+    async def test_unconfirmed_add_is_not_success(self):
+        client, _ = self.client(Response(payload={"items": []}))
+        client.list_token = "ha-token"
+        with self.assertRaises(LookupFailure) as ctx:
+            await client.add_to_shopping_list(parse_product({"sku": "123", "name": "Milk"}))
+        self.assertEqual(ctx.exception.status, "write_uncertain")
+
+    async def test_deleted_list_invalidates_cached_token(self):
+        client, _ = self.client(Response(status=404))
+        client.list_token = "ha-token"
+        with self.assertRaises(LookupFailure):
+            await client.add_to_shopping_list(parse_product({"sku": "123", "name": "Milk"}))
+        self.assertIsNone(client.list_token)
+
+    async def test_auth_failure_does_not_create(self):
+        client, session = self.client(Response(status=401))
+        with self.assertRaises(LookupFailure) as ctx:
+            await client.ensure_shopping_list()
+        self.assertEqual(ctx.exception.status, "auth_required")
+        self.assertEqual(len(session.calls), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

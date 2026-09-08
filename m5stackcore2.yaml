@@ -174,7 +174,7 @@ interval:
               burtracker::screen.select(selected);
             }
           }
-          if (id(awaiting_reply) && millis() - id(request_started) > 15000) {
+          if (id(awaiting_reply) && millis() - id(request_started) > 30000) {
             id(awaiting_reply) = false;
             burtracker::screen.title = "No reply from HA";
             burtracker::screen.detail = "Result is unknown";

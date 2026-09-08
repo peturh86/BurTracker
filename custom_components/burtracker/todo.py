@@ -12,7 +12,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 
 class BurTrackerShoppingList(TodoListEntity):
-    _attr_name = "BurTracker Shopping"
+    _attr_name = "BurTracker Unresolved Scans"
     _attr_should_poll = False
     _attr_supported_features = (
         TodoListEntityFeature.CREATE_TODO_ITEM

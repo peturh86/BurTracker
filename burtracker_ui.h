@@ -63,7 +63,7 @@ struct Screen {
     }
     d.fillCircle(15, 59, 3, colors[mode]);
     d.setTextColor(muted);
-    d.drawString(mode == 0 ? "YOUR SHOPPING LIST" :
+    d.drawString(mode == 0 ? "KRONAN / HA LIST" :
                  mode == 1 ? "REPORT SPOILAGE" : "KRONAN PRICE CHECK", 26, 51);
     d.fillRoundRect(12, 76, 296, 125, 12, panel);
     d.fillRoundRect(12, 89, 3, 98, 1, colors[mode]);
@@ -90,7 +90,7 @@ struct Screen {
     spoil_armed = mode == 1;
     price.clear();
     title = "Show a barcode";
-    detail = mode == 0 ? "Add it to your shopping list" :
+    detail = mode == 0 ? "Add it to Kronan / HA" :
              mode == 1 ? "Record one spoiled item" : "Look up the catalog price";
     footer = mode == 1 ? "ONE SCAN ARMED" : "SCAN WHEN READY";
     render();
@@ -112,14 +112,21 @@ struct Screen {
     title = name.empty() ? "Product unavailable" : name;
     detail = outcome == "reported" || outcome == "already_reported" ? "Spoilage recorded" :
              outcome == "lookup_only" ? "Catalog price / ISK" :
-             outcome == "save_failed" ? "Nothing recorded" : "On your shopping list";
+             outcome == "save_failed" ? "Nothing recorded" :
+             outcome == "kronan_added" ? "On Kronan / HA list" :
+             outcome == "unresolved" ? "Saved for identification" :
+             outcome == "not_added" ? "Not added to Kronan" : "Shopping list updated";
     if (status != "resolved") {
       price.clear();
       title = status == "not_found" ? "Product not found" :
               status == "auth_required" ? "Set Kronan token in HA" :
               status == "rate_limited" ? "Please try again shortly" :
               status == "save_failed" ? "Could not save report" :
-              status == "item_removed" ? "Item removed" : "Lookup unavailable";
+              status == "item_removed" ? "Item removed" :
+              status == "write_uncertain" ? "Check your Kronan list" :
+              status == "list_ambiguous" ? "Multiple HA lists found" :
+              status == "list_failed" || status == "list_missing" ? "Kronan list unavailable" : "Lookup unavailable";
+      if (status == "write_uncertain") detail = "Addition could not be confirmed";
     } else if (request_mode == 2 && price.empty()) {
       detail = "No catalog price available";
     }

@@ -49,7 +49,8 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         h.trackers = {"kitchen", "bin"}
         product_class = module.KronanRetailer.lookup.__globals__["Product"]
         h.retailer = types.SimpleNamespace(lookup=AsyncMock(
-            return_value=product_class("kronan", "sku-1", "Milk", 399)))
+            return_value=product_class("kronan", "sku-1", "Milk", 399)),
+            add_to_shopping_list=AsyncMock(return_value="kronan_added"))
         h.latest_request = {"kitchen": "boot-2"}
         h.store = types.SimpleNamespace(async_save=AsyncMock())
         h.model = module.ShoppingList()
@@ -133,6 +134,40 @@ class BoundaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(args[2]["price_text"], "399 kr")
         self.assertEqual(args[2]["outcome"], "lookup_only")
 
+
+    async def test_shopping_match_goes_to_kronan_not_local_todo(self):
+        h = self.make()
+        await h.async_scan(types.SimpleNamespace(data={
+            "schema_version": "1", "tracker": "kitchen", "barcode": "00123",
+            "intent": "shopping", "request_id": "boot-3",
+        }))
+        h.retailer.add_to_shopping_list.assert_awaited_once()
+        h.store.async_save.assert_not_awaited()
+        self.assertEqual(h.model.items, [])
+        self.assertEqual(h.hass.bus.async_fire.call_args.args[1]["outcome"], "kronan_added")
+
+    async def test_unknown_shopping_scan_is_local_only(self):
+        h = self.make()
+        h.retailer.lookup.return_value = None
+        await h.async_scan(types.SimpleNamespace(data={
+            "schema_version": "1", "tracker": "kitchen", "barcode": "00123",
+            "intent": "shopping", "request_id": "boot-3",
+        }))
+        h.retailer.add_to_shopping_list.assert_not_awaited()
+        self.assertEqual(len(h.model.items), 1)
+        self.assertEqual(h.hass.bus.async_fire.call_args.args[1]["outcome"], "unresolved")
+
+    async def test_remote_failure_does_not_claim_added(self):
+        h = self.make()
+        h.retailer.add_to_shopping_list.side_effect = module.LookupFailure("write_uncertain")
+        await h.async_scan(types.SimpleNamespace(data={
+            "schema_version": "1", "tracker": "kitchen", "barcode": "00123",
+            "intent": "shopping", "request_id": "boot-3",
+        }))
+        result = h.hass.bus.async_fire.call_args.args[1]
+        self.assertEqual(result["outcome"], "unconfirmed")
+        self.assertEqual(result["lookup_status"], "write_uncertain")
+        self.assertEqual(h.model.items, [])
 
 
 if __name__ == "__main__":
