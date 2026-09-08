@@ -5,6 +5,47 @@
 
 namespace burtracker {
 struct Screen {
+  static constexpr uint32_t RESULT_MS = 15000;
+  static constexpr uint32_t SLEEP_MS = 30000;
+  uint32_t last_activity = 0;
+  uint32_t result_started = 0;
+  bool showing_result = false;
+  bool waiting_for_reply = false;
+  bool asleep = false;
+
+  void wake() {
+    last_activity = millis();
+    if (asleep) { M5.Display.setBrightness(160); asleep = false; }
+  }
+
+  void idle() {
+    showing_result = false;
+    price.clear();
+    detail.clear();
+    title = mode == 1 && !spoil_armed ? "Tap SPOILED to arm" : "Show a barcode";
+    render();
+  }
+
+  void tick() {
+    const uint32_t now = millis();
+    if (showing_result && now - result_started >= RESULT_MS) idle();
+    if (!waiting_for_reply && !asleep && now - last_activity >= SLEEP_MS) {
+      M5.Display.setBrightness(0);
+      asleep = true;
+    }
+  }
+
+  void timeout() {
+    waiting_for_reply = false;
+    showing_result = true;
+    result_started = millis();
+    wake();
+    title = "No reply from HA";
+    detail = "Result is unknown";
+    price.clear();
+    render();
+  }
+
   int mode = 0;
   int request_mode = 0;
   bool spoil_armed = false;
@@ -67,6 +108,18 @@ struct Screen {
       if (int(wrapped.size()) * line_height <= available) break;
     }
     int limit = available / line_height;
+    int count = std::min(int(wrapped.size()), limit);
+    float title_scale = d.getTextSizeX();
+    int price_height = 0;
+    if (!price.empty()) {
+      d.setTextSize(2);
+      price_height = d.textWidth(price.c_str()) > 264 ? 16 : 32;
+    }
+    int block_height = count * line_height - 4;
+    if (price_height) block_height += 12 + price_height;
+    if (!detail.empty()) block_height += 12 + 16;
+    int y = 54 + (178 - block_height) / 2;
+    d.setTextSize(title_scale);
     for (int i = 0; i < std::min(int(wrapped.size()), limit); ++i) {
       std::string line = wrapped[i];
       if (i == limit - 1 && int(wrapped.size()) > limit) {
@@ -77,24 +130,29 @@ struct Screen {
         }
         line += "...";
       }
-      d.drawString(line.c_str(), 24, 68 + i * line_height);
+      d.drawCenterString(line.c_str(), 160, y + i * line_height);
     }
+    y += count * line_height - 4;
     if (!price.empty()) {
-      d.setTextSize(2);
-      if (d.textWidth(price.c_str()) > 264) d.setTextSize(1);
+      y += 12;
+      d.setTextSize(price_height / 16);
       d.setTextColor(colors[mode]);
-      d.drawString(price.c_str(), 24, 161);
+      d.drawCenterString(price.c_str(), 160, y);
+      y += price_height;
     }
     if (!detail.empty()) {
       d.setTextSize(1);
       d.setTextColor(muted);
-      d.drawString(detail.c_str(), 24, 207);
+      d.drawCenterString(detail.c_str(), 160, y + 12);
     }
     d.setTextSize(1);
     d.endWrite();
   }
 
   void select(int selected) {
+    wake();
+    showing_result = false;
+    waiting_for_reply = false;
     mode = selected;
     spoil_armed = mode == 1;
     price.clear();
@@ -104,6 +162,9 @@ struct Screen {
   }
 
   void waiting() {
+    wake();
+    showing_result = false;
+    waiting_for_reply = true;
     request_mode = mode;
     if (mode == 1) spoil_armed = false;
     title = "Reading product...";
@@ -115,6 +176,10 @@ struct Screen {
   void result(const std::string& status, const std::string& name,
               const std::string& price_text, const std::string& outcome,
               const std::string& quantity = "") {
+    wake();
+    waiting_for_reply = false;
+    showing_result = true;
+    result_started = millis();
     price = price_text;
     title = name.empty() ? "Product unavailable" : name;
     detail = outcome == "reported" || outcome == "already_reported" ? "Spoilage recorded" :

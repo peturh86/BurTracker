@@ -150,3 +150,39 @@ kept in the readable status row.
 The shopping request journal is stored in .storage/burtracker.<entry_id>.increments.
 Removing the integration removes this journal too. Deleting it removes replay
 protection for old request IDs. This is a request ledger, not purchase history.
+
+
+### Display inactivity (0.5.1)
+
+Results and errors clear after 15 seconds, returning to the selected mode's idle
+screen. After 30 seconds without a barcode read, touch, or reply, the backlight
+turns off. It stays lit while waiting for HA (up to the existing 30-second reply
+timeout). A decoded barcode or touch wakes it immediately. The scanner library
+exposes decoded results, not a separate scene-change event: moving an object
+without decoding a barcode does not wake the display. Scanner monitoring, Wi-Fi,
+HA and OTA remain running. This is backlight sleep, not ESP32 deep sleep.
+Mode and spoilage rearming rules are preserved. Product name, price and status
+are centered as a group, horizontally and vertically. Adjust RESULT_MS and
+SLEEP_MS in burtracker_ui.h to change the durations.
+
+### Battery expectations
+
+M5Stack publishes approximately 5.09 V x 255.84 mA = 1.30 W for a powered
+Module13.2 QRCode plus Core2. Its current Core2 specification lists 500 mAh at
+3.7 V (1.85 Wh), giving about 1.4 hours before conversion losses at that measured
+load. A 390 mAh battery would give about 1.1 hours before losses. These are
+rough active-load estimates, not measured runtime for this firmware; scene-idle
+consumption, battery age and backlight duty cycle matter. Check the actual battery
+label and that the battery remains connected after stacking the module.
+
+ESP32 deep sleep disconnects Wi-Fi and restarts firmware on wake. UART wake is a
+light-sleep feature and can lose initial characters. Keeping the camera scanner
+powered for scene detection still consumes power. For long battery life, a future
+revision should switch off the scanner and use a low-power external presence
+sensor or button to wake both scanner and host, allowing for startup and HA
+reconnection time. USB power remains the practical choice for this prototype.
+
+Sources: [Core2](https://docs.m5stack.com/en/core/core2),
+[scanner power specifications](https://docs.m5stack.com/en/module/Module13.2_QRCode),
+[scanner library](https://github.com/m5stack/M5Module-QRCode),
+[ESP32 sleep modes](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/sleep_modes.html).

@@ -165,6 +165,8 @@ interval:
     then:
       - lambda: |-
           M5.update();
+          if (M5.Touch.getCount()) burtracker::screen.wake();
+          if (id(scanner_ready)) burtracker::screen.tick();
           if (id(scanner_ready)) {
             // Core2 touch-strip buttons use physical coordinates: C is left at rotation 3.
             int selected = M5.BtnC.wasPressed() ? 0 :
@@ -176,9 +178,7 @@ interval:
           }
           if (id(awaiting_reply) && millis() - id(request_started) > 30000) {
             id(awaiting_reply) = false;
-            burtracker::screen.title = "No reply from HA";
-            burtracker::screen.detail = "Result is unknown";
-            burtracker::screen.render();
+            burtracker::screen.timeout();
           }
 
           if (!id(scanner_ready)) return;
@@ -196,6 +196,7 @@ interval:
             barcode.pop_back();
           }
           if (barcode.empty()) return;
+          burtracker::screen.wake();
           if (burtracker::screen.mode == 1 && !burtracker::screen.spoil_armed) return;
 
           // Additional display/log protection against rapid repeats.
