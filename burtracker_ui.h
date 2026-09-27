@@ -22,7 +22,8 @@ struct Screen {
     showing_result = false;
     price.clear();
     detail.clear();
-    title = mode == 1 && !spoil_armed ? "Tap SPOILED to arm" : "Show a barcode";
+    title = mode == 1 && !spoil_armed ? "Tap SPOILED to arm" :
+            mode == 3 ? "Scan next item" : "Show a barcode";
     render();
   }
 
@@ -159,6 +160,17 @@ struct Screen {
     price.clear();
     title = "Show a barcode";
     detail.clear();
+    render();
+  }
+
+  void pantry_captured() {
+    wake();
+    waiting_for_reply = false;
+    showing_result = true;
+    result_started = millis();
+    title = "Barcode captured";
+    detail = "Scan next item";
+    price.clear();
     render();
   }
 

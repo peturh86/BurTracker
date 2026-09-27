@@ -10,10 +10,21 @@ views:
       - type: entities
         title: Tonight
         entities:
-          - entity: sensor.burtracker_todays_meal
+          - entity: sensor.today_s_meal
             name: Dinner
-          - entity: sensor.burtracker_pantry_barcode_observations
-            name: Pantry sightings
+          - entity: sensor.pantry_barcode_observations
+            name: Pantry items
+      - type: markdown
+        title: Pantry items
+        content: >-
+          {% set items = state_attr('sensor.pantry_barcode_observations', 'items') or [] %}
+          {% if items %}
+          {% for item in items %}
+          - **{{ item.product_name or 'Unidentified product' }}** (`{{ item.barcode }}`) — last seen {{ item.seen_at | as_datetime | as_local | relative_time }}; scanned {{ item.scans }} time(s); {{ item.confidence }}{% if item.confirmed_packages is not none %}; {{ item.confirmed_packages }} confirmed package(s){% endif %}
+          {% endfor %}
+          {% else %}
+          No pantry barcode observations yet.
+          {% endif %}
       - type: markdown
         title: Tonight's recipe
         content: >-

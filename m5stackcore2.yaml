@@ -221,9 +221,15 @@ interval:
           id(accepted_scans).publish_state(++scan_count);
           id(active_request) = id(boot_session) + "-" + std::to_string(scan_count);
           id(active_barcode) = barcode;
-          id(awaiting_reply) = true;
-          id(request_started) = now;
-          burtracker::screen.waiting();
+          if (burtracker::screen.mode == 3) {
+            // Pantry is a bulk capture flow: acknowledge locally and keep scanning.
+            id(awaiting_reply) = false;
+            burtracker::screen.pantry_captured();
+          } else {
+            id(awaiting_reply) = true;
+            id(request_started) = now;
+            burtracker::screen.waiting();
+          }
           id(publish_scan)->execute(barcode, id(active_request),
                                    std::string(burtracker::screen.intent()));
 
