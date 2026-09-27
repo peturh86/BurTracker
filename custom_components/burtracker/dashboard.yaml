@@ -28,14 +28,42 @@ views:
       - type: markdown
         title: Tonight's recipe
         content: >-
-          {% set meal = states('sensor.burtracker_todays_meal') %}
+          {% set meal = states('sensor.today_s_meal') %}
           **{{ meal }}**
 
           **Ingredients**
-          {{ state_attr('sensor.burtracker_todays_meal', 'ingredients') or 'not recorded' }}
+          {{ state_attr('sensor.today_s_meal', 'ingredients') or 'not recorded' }}
 
           **Method**
-          {{ state_attr('sensor.burtracker_todays_meal', 'instructions') or 'not recorded' }}
+          {{ state_attr('sensor.today_s_meal', 'instructions') or 'not recorded' }}
+      - type: markdown
+        title: Tomorrow's dinner
+        content: >-
+          {% set meal = states('sensor.tomorrow_s_meal') %}
+          **{{ meal }}**
+
+          {% set total = state_attr('sensor.tomorrow_s_meal', 'cost_isk') %}
+          {% set each = state_attr('sensor.tomorrow_s_meal', 'cost_per_portion_isk') %}
+          {% if total is not none %}
+          Krónan package basket: **{{ total }} ISK** ({{ each }} ISK per planned portion).
+          Prices observed {{ state_attr('sensor.tomorrow_s_meal', 'price_observed_at') }}. Catalog/weight prices may differ at checkout.
+          {% endif %}
+
+          {% set items = state_attr('sensor.tomorrow_s_meal', 'shopping_items') or [] %}
+          {% if items %}
+          **Buy from Krónan**
+          {% for item in items %}
+          - {{ item.packages }} × **{{ item.product_name }}** — {{ item.unit_price_isk }} ISK each, {{ item.line_total_isk }} ISK total (`{{ item.sku }}`; {{ item.price_info }})
+          {% endfor %}
+          {% else %}
+          No verified Krónan shopping quote saved for tomorrow yet.
+          {% endif %}
+
+          **Ingredients**
+          {{ state_attr('sensor.tomorrow_s_meal', 'ingredients') or 'not recorded' }}
+
+          **Method**
+          {{ state_attr('sensor.tomorrow_s_meal', 'instructions') or 'not recorded' }}
       - type: entities
         title: Record meal feedback
         show_header_toggle: false
