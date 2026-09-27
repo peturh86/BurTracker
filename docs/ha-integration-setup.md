@@ -165,6 +165,19 @@ Mode and spoilage rearming rules are preserved. Product name, price and status
 are centered as a group, horizontally and vertically. Adjust RESULT_MS and
 SLEEP_MS in burtracker_ui.h to change the durations.
 
+## 0.6.2 feedback controls
+
+The Lovelace starter dashboard provides a selectable feedback metric, independent
+1–5 score, optional comment, and save action. Enjoyment (`enjoyment`) is distinct
+from cooking difficulty (`difficulty`); portions, approval, cost, and other
+remain available as separate categories.
+
+For YAML-managed Home Assistant, merge `docs/meal-feedback-helpers.yaml` into
+your HA configuration to define the input helpers and the templated submission
+script. Templates are evaluated by that script, not inside the Lovelace service
+action. Update the dashboard from `custom_components/burtracker/dashboard.yaml`
+after installing the helpers.
+
 ## Meal-planner slice (0.6.1)
 
 BurTracker now owns the first durable meal-planner store in the HA config's `.storage/burtracker_meals.db`. It exposes a native meal calendar, a today's-meal sensor with recipe attributes, structured HA services (`burtracker.record_meal_feedback`, `burtracker.set_meal_status`), and an authenticated HA HTTP endpoint at `/api/burtracker/meals/{action}` for an external meal agent. Use the Home Assistant bearer-token API; never put that token in the integration or ESPHome firmware. The database stores recipes, planned meals, meal-specific feedback, pantry observations, actual purchase totals, weekly/monthly budget targets, and special-event allocations. Initial schema can be recreated during development; no migration system is included.
@@ -182,9 +195,9 @@ The Core2's left SHOP tab now toggles to PANTRY when pressed again; tap it again
 5. Use the integration's actual entity IDs: `calendar.burtracker_meals`, `sensor.today_s_meal`, and `sensor.pantry_barcode_observations`. The Pantry items Markdown card in the starter YAML renders the sensor's `items` attribute (product name/barcode, last-seen time, scan count, confidence, and any confirmed package count).
 6. For plan entry initially, use the authenticated API endpoint described below (or the calendar is empty until meals are added). Feedback and “not home” / “ate out” buttons are available directly on the dashboard for tonight.
 
-The dashboard gives one-tap common feedback presets and tonight-status controls; the feedback/status services default the date to today when omitted. For another date or custom metrics/scores/text, use Developer tools → Actions → `burtracker.record_meal_feedback`. The schema supports taste, difficulty, portions, approval, cost, and other, with an optional 1–5 score and comment.
+The dashboard gives tonight-status controls. The feedback/status services default the date to today when omitted. For another date or custom metrics/scores/text, use Developer tools → Actions → `burtracker.record_meal_feedback`. The feedback schema accepts enjoyment/taste, difficulty, portions, approval, cost, and other, with an optional 1–5 score and comment.
 
-The project dashboard YAML is a starter configuration, not automatically installed by HACS. The API is authenticated by Home Assistant; use a long-lived access token in clients and do not put it in firmware.
+The project dashboard YAML is a starter configuration, not automatically installed by HACS. In a YAML-managed Home Assistant setup, merge `docs/meal-feedback-helpers.yaml` into the HA configuration to define the dashboard's input helpers and templated submission script; YAML templates belong in the script (not the Lovelace service payload). Then use the dashboard YAML from this repository as your dashboard definition. The metric selector keeps enjoyment (`enjoyment`) separate from cooking difficulty (`difficulty`).
 
 
 The API route is authenticated by Home Assistant. Examples:

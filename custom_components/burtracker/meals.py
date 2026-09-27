@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS meals (
 );
 CREATE TABLE IF NOT EXISTS feedback (
  id INTEGER PRIMARY KEY, meal_id INTEGER NOT NULL REFERENCES meals(id) ON DELETE CASCADE,
- metric TEXT NOT NULL CHECK(metric IN ('taste','difficulty','portions','approval','cost','other')),
+ metric TEXT NOT NULL CHECK(metric IN ('enjoyment','taste','difficulty','portions','approval','cost','other')),
  score INTEGER CHECK(score IS NULL OR score BETWEEN 1 AND 5), comment TEXT NOT NULL DEFAULT '',
  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -101,7 +101,7 @@ def set_status(day,status):
   if c.execute('UPDATE meals SET status=? WHERE day=?',(status,day)).rowcount!=1:raise LookupError('no planned meal that day')
 
 def add_feedback(day,metric,score=None,comment=''):
- if metric not in {'taste','difficulty','portions','approval','cost','other'} or (score is not None and not 1<=int(score)<=5):raise ValueError('invalid feedback')
+ if metric not in {'enjoyment','taste','difficulty','portions','approval','cost','other'} or (score is not None and not 1<=int(score)<=5):raise ValueError('invalid feedback')
  with connect() as c:
   row=c.execute('SELECT id FROM meals WHERE day=?',(day,)).fetchone()
   if not row:raise LookupError('no meal for that date')

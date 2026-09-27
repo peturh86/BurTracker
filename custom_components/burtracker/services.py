@@ -9,7 +9,7 @@ from .const import DOMAIN, RESULT_EVENT
 def register_meal_services(hass: HomeAssistant, meal_store) -> None:
     feedback_schema = vol.Schema({
         vol.Optional("day"): cv.date,
-        vol.Required("metric"): vol.In({"taste", "difficulty", "portions", "approval", "cost", "other"}),
+        vol.Required("metric"): vol.In({"enjoyment", "taste", "difficulty", "portions", "approval", "cost", "other"}),
         vol.Optional("score"): vol.All(vol.Coerce(int), vol.Range(min=1, max=5)),
         vol.Optional("comment", default=""): cv.string,
     })
