@@ -12,6 +12,7 @@ from homeassistant.components.http import HomeAssistantView
 from homeassistant.components.http.const import KEY_AUTHENTICATED,KEY_HASS
 from homeassistant.util import dt as dt_util
 from .const import DOMAIN
+from . import meals as meal_store
 from .meals import api_call
 from .retailer import LookupFailure
 
