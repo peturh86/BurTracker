@@ -23,11 +23,13 @@ A household shopping-list manager with physical barcode trackers near the fridge
 
 BurTracker does not promise an accurate inventory. Missing scans, purchases elsewhere, shared products, and partial consumption make that impossible without extra work from users. Spoilage must be explicitly reported or clearly presented as an estimate.
 
-## Meal planner (0.6.1)
+## Meal planner (0.6.4)
 
-BurTracker now stores household recipes, meal plans, structured feedback, pantry barcode observations and budget records in HA's persistent `.storage` directory. HA exposes a native meal calendar, meal-detail sensor, services, and an authenticated REST interface for an external meal-planning agent. Existing SHOP scans still add to Krónan; PANTRY is a separate mode that records a barcode sighting without inferring quantity or adding a purchase. See [setup and API](docs/ha-integration-setup.md).
+BurTracker stores recipes, dated meals, outcomes, feedback, pantry sightings, budgets, and verified Krónan product-price snapshots in HA's persistent `.storage` database. Home Assistant exposes the meal calendar and details, a separate tomorrow-meal sensor, feedback/status services, calendar-event access, and a loopback-only authenticated API. The private `meal-planner` Hermes profile connects through a 12-tool MCP server; it never writes SQLite directly.
 
-The database schema is early-stage/disposable and has no migration system yet. Calendar-aware planning, agent tool/client, price estimates, and automatic meal-list sync to Krónan remain to be implemented. Do not use shopping scan increments as pantry inventory.
+The agent can search Krónan's official product and recipe APIs, re-read each selected SKU for current catalog price/pack/shortage data, total whole packages, and calculate the full basket and basket-per-planned-portion figure. LLM-generated/adapted recipes are saveable only after every ingredient is mapped to a Krónan SKU and the current product details pass checks. Krónan's linked-recipe product list is preview-only until the model audits recipe-text coverage. Obvious dairy products without Krónan's lactose-free tag are blocked for this household. Calendar events, budget targets, and feedback are provided to the model as evidence; pantry sightings are not treated as stock counts. Prices are catalog observations, not checkout guarantees; weighed products and in-store shelf availability can differ. Automatic shopping-list mutation is intentionally not enabled.
+
+The store uses idempotent schema setup and a narrow feedback-metric migration; this is not a general migration framework. See [setup and API](docs/ha-integration-setup.md).
 
 ## Project status
 

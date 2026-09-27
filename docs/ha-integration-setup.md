@@ -93,10 +93,26 @@ Auðkenni login. Enter only the token value in HA. Tokens never enter firmware.
 
 Endpoints used:
 - GET /api/v1/products/barcode/{barcode}/
+- POST /api/v1/products/search/ (query, page, pageSize, withDetail)
+- POST /api/v1/shopping-notes/search/ (query, Scan & Go store ext_id)
 - GET /api/v1/product-lists/ (limit/offset pagination)
 - POST /api/v1/product-lists/ (name: HA)
 - GET /api/v1/product-lists/{token}/
 - POST /api/v1/product-lists/{token}/update-item/ (sku and absolute quantity)
+
+BurTracker exposes a private agent API under `/api/burtracker/meals/{action}`. Normal Home Assistant-authenticated requests continue to work. The Hermes meal-planner MCP bridge uses a separate high-entropy token stored in a host-only mode-600 file; the Home Assistant container mounts that file read-only, and the agent API accepts that header only when the TCP peer is loopback. Do not proxy or expose this agent API to the LAN/Internet using the local token. The MCP server runs in the dedicated `meal-planner` Hermes profile and communicates with HA over `http://127.0.0.1:8123`; it never opens the SQLite database directly.
+
+Supported agent operations:
+- `POST /api/burtracker/meals/kronan_stores` — list store IDs.
+- `POST /api/burtracker/meals/kronan_search` — body `{"query":"þorskur","page":1,"page_size":15}`; optional `store` uses Scan & Go search.
+- `POST /api/burtracker/meals/kronan_recipe_search` — search official Krónan recipes.
+- `POST /api/burtracker/meals/kronan_recipe` — fetch recipe by `slug`.
+- `POST /api/burtracker/meals/quote_kronan_recipe` — preview current prices for Krónan-linked recipe SKUs. **Preview only:** it deliberately cannot be saved until the model audits recipe-text ingredients against linked products.
+- `POST /api/burtracker/meals/quote_generated_meal` — verify each LLM-selected product SKU and price; body includes `day`, `title`, `portions`, `instructions`, optional `source_url`, and `items: [{"ingredient":"...","sku":"...","packages":1,"quantity_basis":"..."}]`. Every must-buy ingredient requires a product line. Whole packages are priced; incomplete, temporarily short, unpriced or obvious non-lactose-free dairy lines cannot produce a saveable quote.
+- `POST /api/burtracker/meals/save_meal_quote` — body `{"quote_id":"..."}`; quote expires after two hours. Existing dated meals require explicit `replace_existing: true`; repeated saves are idempotent.
+- `GET /api/burtracker/meals/calendar_events?start=YYYY-MM-DD&end=YYYY-MM-DD` — asks Home Assistant's calendar service for non-BurTracker calendars over the date range.
+
+Quote totals are the full amount to buy all listed packages. “Per portion” divides that basket by planned portions; it does not infer household stock or subtract leftover package contents. Krónan home-delivery catalog search is not a physical-store shelf-stock guarantee, and variable-weight/checkout prices may differ. The agent does not automatically mutate Krónan lists.
 
 Source: https://api.kronan.is/api/v1/schema/swagger-ui/#/product-lists
 Machine schema: https://api.kronan.is/api/v1/schema/

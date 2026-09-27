@@ -4,7 +4,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from . import meals
 
 async def async_setup_entry(hass, entry, async_add_entities):
- async_add_entities([SpoilageReports(entry), PantrySummary(entry), TodayMeal(entry)])
+ async_add_entities([SpoilageReports(entry), PantrySummary(entry), TodayMeal(entry), TomorrowMeal(entry)])
 
 class _MealSensor(SensorEntity):
  _attr_has_entity_name=True
@@ -38,10 +38,13 @@ class PantrySummary(_MealSensor):
 class TodayMeal(_MealSensor):
  _attr_name="Today's Meal"
  _attr_icon="mdi:food"
- def __init__(self,entry):super().__init__(entry,'today_meal')
+ day_offset=0
+ suffix='today_meal'
+ def __init__(self,entry):super().__init__(entry,self.suffix)
  def _row(self):
-  from datetime import date
-  return next((r for r in meals.meals() if r['day']==date.today().isoformat()),None)
+  from datetime import date,timedelta
+  target=(date.today()+timedelta(days=self.day_offset)).isoformat()
+  return next((r for r in meals.meals(target,target)),None)
  @property
  def native_value(self):
   row=self._row()
@@ -51,4 +54,17 @@ class TodayMeal(_MealSensor):
  @property
  def extra_state_attributes(self):
   row=self._row() or {}
-  return {k:row.get(k) for k in ('day','recipe_name','portions','ingredients','instructions','status','cost_isk')}
+  attrs={k:row.get(k) for k in ('day','recipe_name','portions','ingredients','instructions','status','cost_isk','notes','source_url')}
+  if row.get('day'):
+   items=meals.meal_shopping_items(row['day'])
+   attrs['shopping_items']=items
+   attrs['cost_per_portion_isk']=round(row['cost_isk']/row['portions'],2) if row.get('cost_isk') is not None and row.get('portions') else None
+   attrs['price_observed_at']=max((x['observed_at'] for x in items),default=None)
+  else:
+   attrs.update(shopping_items=[],cost_per_portion_isk=None,price_observed_at=None)
+  return attrs
+
+class TomorrowMeal(TodayMeal):
+ _attr_name="Tomorrow's Meal"
+ day_offset=1
+ suffix='tomorrow_meal'
