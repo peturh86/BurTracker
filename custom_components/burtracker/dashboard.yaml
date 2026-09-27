@@ -40,36 +40,18 @@ views:
         title: Record meal feedback
         show_header_toggle: false
         entities:
+          - entity: input_select.burtracker_feedback_metric
+            name: Feedback category
+          - entity: input_number.burtracker_feedback_score
+            name: Score (1 = poor, 5 = great)
+          - entity: input_text.burtracker_feedback_comment
+            name: Comment (optional)
           - type: button
-            name: Great taste (5/5)
-            icon: mdi:thumb-up
+            name: Save feedback
+            icon: mdi:content-save
             tap_action:
               action: call-service
-              service: burtracker.record_meal_feedback
-              service_data:
-                metric: taste
-                score: 5
-                comment: Great taste
-          - type: button
-            name: Everyone hated it (1/5)
-            icon: mdi:thumb-down
-            tap_action:
-              action: call-service
-              service: burtracker.record_meal_feedback
-              service_data:
-                metric: approval
-                score: 1
-                comment: Everyone hated it
-          - type: button
-            name: Too difficult to cook (2/5)
-            icon: mdi:chef-hat
-            tap_action:
-              action: call-service
-              service: burtracker.record_meal_feedback
-              service_data:
-                metric: difficulty
-                score: 2
-                comment: Too difficult to cook
+              service: script.burtracker_submit_meal_feedback
       - type: button
         name: We are not home tonight
         icon: mdi:home-export-outline
@@ -89,7 +71,9 @@ views:
       - type: markdown
         title: Feedback actions
         content: >-
-          For structured feedback use the `burtracker.record_meal_feedback` action.
-          Pick the date and metric, then optionally score it from 1 (poor) to 5 (great)
-          and add a note. Example: metric `difficulty`, score 2, comment "Too difficult
-          to cook after work".
+          Feedback is recorded separately for each category: enjoyment, cooking
+          difficulty, portions, family approval, cost, or other. Enter a score
+          from 1 (poor) to 5 (great), and an optional note, then save.
+          To install the helper entities and save script, merge
+          `docs/meal-feedback-helpers.yaml` into your Home Assistant YAML
+          configuration and reload helpers/scripts (or restart Home Assistant).

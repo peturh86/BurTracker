@@ -13,6 +13,7 @@ record_meal_feedback:
       selector:
         select:
           options:
+            - enjoyment
             - taste
             - difficulty
             - portions

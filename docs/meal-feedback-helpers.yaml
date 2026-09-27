@@ -1,0 +1,43 @@
+input_select:
+  burtracker_feedback_metric:
+    name: Meal feedback metric
+    options:
+      - enjoyment
+      - difficulty
+      - portions
+      - approval
+      - cost
+      - other
+    icon: mdi:comment-check
+
+input_number:
+  burtracker_feedback_score:
+    name: Meal feedback score
+    min: 1
+    max: 5
+    step: 1
+    mode: slider
+    icon: mdi:star
+
+input_text:
+  burtracker_feedback_comment:
+    name: Meal feedback comment
+    max: 2000
+    mode: text
+    icon: mdi:comment-text-outline
+
+script:
+  burtracker_submit_meal_feedback:
+    alias: Save BurTracker meal feedback
+    mode: queued
+    sequence:
+      - service: burtracker.record_meal_feedback
+        data:
+          metric: "{{ states('input_select.burtracker_feedback_metric') }}"
+          score: "{{ states('input_number.burtracker_feedback_score') | int }}"
+          comment: "{{ states('input_text.burtracker_feedback_comment') }}"
+      - service: input_text.set_value
+        target:
+          entity_id: input_text.burtracker_feedback_comment
+        data:
+          value: ""
