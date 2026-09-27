@@ -3,13 +3,13 @@ record_meal_feedback:
   description: Save structured feedback against the meal for a date.
   fields:
     day:
-      name: Meal date
-      required: true
+      name: Meal date (defaults to today)
+      required: false
       selector:
         date:
     metric:
-      name: Feedback metric
-      required: true
+      name: Feedback metric (defaults to BurTracker selector)
+      required: false
       selector:
         select:
           options:

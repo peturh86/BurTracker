@@ -165,18 +165,14 @@ Mode and spoilage rearming rules are preserved. Product name, price and status
 are centered as a group, horizontally and vertically. Adjust RESULT_MS and
 SLEEP_MS in burtracker_ui.h to change the durations.
 
-## 0.6.2 feedback controls
+## 0.6.3 self-contained meal feedback
 
-The Lovelace starter dashboard provides a selectable feedback metric, independent
-1–5 score, optional comment, and save action. Enjoyment (`enjoyment`) is distinct
-from cooking difficulty (`difficulty`); portions, approval, cost, and other
-remain available as separate categories.
-
-For YAML-managed Home Assistant, merge `docs/meal-feedback-helpers.yaml` into
-your HA configuration to define the input helpers and the templated submission
-script. Templates are evaluated by that script, not inside the Lovelace service
-action. Update the dashboard from `custom_components/burtracker/dashboard.yaml`
-after installing the helpers.
+The BurTracker config entry creates native feedback controls: a metric selector,
+1–5 score slider, and optional comment field. These are integration entities, not
+`input_*` helpers, so no Home Assistant configuration YAML or script is required.
+The dashboard's Save feedback button calls `burtracker.record_meal_feedback`,
+which reads the current values from those entities. Enjoyment and cooking
+difficulty are separate metrics; legacy `taste` entries remain accepted.
 
 ## Meal-planner slice (0.6.1)
 
@@ -192,12 +188,12 @@ The Core2's left SHOP tab now toggles to PANTRY when pressed again; tap it again
 2. Update firmware by copying `m5stackcore2.yaml` and `burtracker_ui.h` together into the ESPHome configuration directory beside your real `secrets.yaml`, then install/OTA flash the node. The Core2 left button toggles SHOP/PANTRY. The firmware is not installed by HACS.
 3. In Home Assistant, open Settings → Dashboards → Add dashboard → New dashboard. Choose a title and URL, then open its ⋮ menu → Edit dashboard → Raw configuration editor.
 4. Paste the contents of `custom_components/burtracker/dashboard.yaml` and save. The dashboard uses built-in cards only.
-5. Use the integration's actual entity IDs: `calendar.burtracker_meals`, `sensor.today_s_meal`, and `sensor.pantry_barcode_observations`. The Pantry items Markdown card in the starter YAML renders the sensor's `items` attribute (product name/barcode, last-seen time, scan count, confidence, and any confirmed package count).
+5. Use the integration's actual entity IDs: `calendar.burtracker_meals`, `sensor.today_s_meal`, `sensor.pantry_barcode_observations`, `select.burtracker_feedback_metric`, `number.burtracker_feedback_score`, and `text.burtracker_feedback_comment`. The feedback entities are created by the BurTracker integration itself. The Pantry items Markdown card renders the sensor's `items` attribute.
 6. For plan entry initially, use the authenticated API endpoint described below (or the calendar is empty until meals are added). Feedback and “not home” / “ate out” buttons are available directly on the dashboard for tonight.
 
 The dashboard gives tonight-status controls. The feedback/status services default the date to today when omitted. For another date or custom metrics/scores/text, use Developer tools → Actions → `burtracker.record_meal_feedback`. The feedback schema accepts enjoyment/taste, difficulty, portions, approval, cost, and other, with an optional 1–5 score and comment.
 
-The project dashboard YAML is a starter configuration, not automatically installed by HACS. In a YAML-managed Home Assistant setup, merge `docs/meal-feedback-helpers.yaml` into the HA configuration to define the dashboard's input helpers and templated submission script; YAML templates belong in the script (not the Lovelace service payload). Then use the dashboard YAML from this repository as your dashboard definition. The metric selector keeps enjoyment (`enjoyment`) separate from cooking difficulty (`difficulty`).
+The project dashboard YAML is a starter configuration, not automatically installed by HACS. After updating the integration, use the dashboard YAML from `custom_components/burtracker/dashboard.yaml`; BurTracker creates the feedback selector, score, and comment entities itself, so no helper YAML or script needs to be merged.
 
 
 The API route is authenticated by Home Assistant. Examples:

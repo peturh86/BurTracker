@@ -40,18 +40,18 @@ views:
         title: Record meal feedback
         show_header_toggle: false
         entities:
-          - entity: input_select.burtracker_feedback_metric
+          - entity: select.burtracker_feedback_metric
             name: Feedback category
-          - entity: input_number.burtracker_feedback_score
+          - entity: number.burtracker_feedback_score
             name: Score (1 = poor, 5 = great)
-          - entity: input_text.burtracker_feedback_comment
+          - entity: text.burtracker_feedback_comment
             name: Comment (optional)
           - type: button
             name: Save feedback
             icon: mdi:content-save
             tap_action:
               action: call-service
-              service: script.burtracker_submit_meal_feedback
+              service: burtracker.record_meal_feedback
       - type: button
         name: We are not home tonight
         icon: mdi:home-export-outline
@@ -69,11 +69,8 @@ views:
           service_data:
             status: ate_out
       - type: markdown
-        title: Feedback actions
+        title: Feedback
         content: >-
-          Feedback is recorded separately for each category: enjoyment, cooking
-          difficulty, portions, family approval, cost, or other. Enter a score
-          from 1 (poor) to 5 (great), and an optional note, then save.
-          To install the helper entities and save script, merge
-          `docs/meal-feedback-helpers.yaml` into your Home Assistant YAML
-          configuration and reload helpers/scripts (or restart Home Assistant).
+          Choose one metric at a time and enter its 1–5 score and optional note.
+          Enjoyment and cooking difficulty are tracked separately. Press Save feedback
+          to record the selected metric for today's meal.
