@@ -169,8 +169,9 @@ interval:
           if (id(scanner_ready)) burtracker::screen.tick();
           if (id(scanner_ready)) {
             // Core2 touch-strip buttons use physical coordinates: C is left at rotation 3.
-            int selected = M5.BtnC.wasPressed() ? 0 :
-                           M5.BtnB.wasPressed() ? 1 : M5.BtnA.wasPressed() ? 2 : -1;
+            int selected = M5.BtnC.wasPressed() ?
+                             (burtracker::screen.mode == 0 ? 3 : 0) :
+                             M5.BtnB.wasPressed() ? 1 : M5.BtnA.wasPressed() ? 2 : -1;
             if (selected >= 0) {
               id(awaiting_reply) = false;
               burtracker::screen.select(selected);

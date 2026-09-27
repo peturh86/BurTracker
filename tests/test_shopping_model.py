@@ -100,6 +100,12 @@ class ShoppingTests(unittest.TestCase):
         restored.report_spoiled("123", "kitchen", "r2", "t3")
         self.assertEqual(len(restored.spoiled), 2)
 
+    def test_pantry_scan_is_a_distinct_valid_intent(self):
+        self.assertEqual(
+            model.validate_scan(self.event | {"intent": "pantry"}, {"kitchen"}),
+            ("0012345678905", "kitchen"),
+        )
+
     def test_tracker_options(self):
         self.assertEqual(model.parse_trackers(" kitchen, bin, kitchen "),
                          {"kitchen", "bin"})
