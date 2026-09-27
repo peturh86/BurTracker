@@ -165,7 +165,36 @@ Mode and spoilage rearming rules are preserved. Product name, price and status
 are centered as a group, horizontally and vertically. Adjust RESULT_MS and
 SLEEP_MS in burtracker_ui.h to change the durations.
 
-### Battery expectations
+## Meal-planner slice (0.6.0)
+
+BurTracker now owns the first durable meal-planner store in the HA config's `.storage/burtracker_meals.db`. It exposes a native meal calendar, a today's-meal sensor with recipe attributes, structured HA services (`burtracker.record_meal_feedback`, `burtracker.set_meal_status`), and an authenticated HA HTTP endpoint at `/api/burtracker/meals/{action}` for an external meal agent. Use the Home Assistant bearer-token API; never put that token in the integration or ESPHome firmware. The database stores recipes, planned meals, meal-specific feedback, pantry observations, actual purchase totals, weekly/monthly budget targets, and special-event allocations. Initial schema can be recreated during development; no migration system is included.
+
+Default household settings are 2 adults, children aged 10 and 7, and a provisional 0.75 adult-equivalent serving for each child. This is a configurable starting estimate, not nutrition guidance; update it after portion feedback. New meal dates store one plan per day. `not_home` and `ate_out` are explicit outcomes.
+
+The Core2's left SHOP tab now toggles to PANTRY when pressed again; tap it again to return to SHOP. PANTRY records one timestamped barcode sighting, looks up its product name if Krónan is available, and does not add to the Krónan shopping list or infer quantity. Replayed tracker/request IDs are deduplicated. Quantities remain unknown unless explicitly confirmed. Sightings include recent/aging/stale confidence (7/30-day thresholds), not assumed stock.
+
+## 0.6.0 installation and usable meal dashboard
+
+1. Update/copy `custom_components/burtracker` into `/config/custom_components/burtracker` and restart Home Assistant (HACS can install the integration code).
+2. Update firmware by copying `m5stackcore2.yaml` and `burtracker_ui.h` together into the ESPHome configuration directory beside your real `secrets.yaml`, then install/OTA flash the node. The Core2 left button toggles SHOP/PANTRY. The firmware is not installed by HACS.
+3. In Home Assistant, open Settings → Dashboards → Add dashboard → New dashboard. Choose a title and URL, then open its ⋮ menu → Edit dashboard → Raw configuration editor.
+4. Paste the contents of `custom_components/burtracker/dashboard.yaml` and save. The dashboard uses built-in cards only.
+5. Confirm the `BurTracker Meals` calendar and `Today's Meal` sensor exist. If entity IDs differ, edit the two IDs in the dashboard YAML to match Settings → Devices & services → Entities.
+6. For plan entry initially, use the authenticated API endpoint described below (or the calendar is empty until meals are added). Feedback and “not home” / “ate out” buttons are available directly on the dashboard for tonight.
+
+The dashboard gives one-tap common feedback presets and tonight-status controls; the feedback/status services default the date to today when omitted. For another date or custom metrics/scores/text, use Developer tools → Actions → `burtracker.record_meal_feedback`. The schema supports taste, difficulty, portions, approval, cost, and other, with an optional 1–5 score and comment.
+
+The project dashboard YAML is a starter configuration, not automatically installed by HACS. The API is authenticated by Home Assistant; use a long-lived access token in clients and do not put it in firmware.
+
+
+The API route is authenticated by Home Assistant. Examples:
+- `GET /api/burtracker/meals/meals` (today through the next seven days by default)
+- `GET /api/burtracker/meals/recipes`
+- `POST /api/burtracker/meals/upsert_meal` with JSON `{"day":"YYYY-MM-DD","title":"Dinner","portions":3.5}`
+- `POST /api/burtracker/meals/feedback` with JSON `{"day":"YYYY-MM-DD","metric":"portions","score":2,"comment":"Still too small"}`
+
+Meal suggestions, automatic Krónan list synchronization, actual receipt import, calendar-aware LLM planning, and an agent-facing client are not wired yet. In particular, do not let the agent replay a shopping-list increment: the existing scanner semantics increment Krónan quantities. Add sync only after a read/compare/update strategy has been verified.
+
 
 M5Stack publishes approximately 5.09 V x 255.84 mA = 1.30 W for a powered
 Module13.2 QRCode plus Core2. Its current Core2 specification lists 500 mAh at

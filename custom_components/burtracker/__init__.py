@@ -3,6 +3,7 @@ import asyncio
 from copy import deepcopy
 from dataclasses import asdict
 import logging
+from pathlib import Path
 
 from homeassistant.const import Platform
 from homeassistant.core import callback
@@ -15,15 +16,26 @@ from .const import CONF_TRACKERS, DOMAIN, RESULT_EVENT, SCAN_EVENT
 from .kronan import KronanRetailer
 from .retailer import LookupFailure
 from .model import ShoppingList, parse_trackers, validate_scan
+from . import meals as meal_store
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS = [Platform.TODO, Platform.SENSOR]
+PLATFORMS = [Platform.TODO, Platform.SENSOR, Platform.CALENDAR]
+
+async def async_setup(hass, config):
+    meal_store.DB = Path(hass.config.path(".storage", "burtracker_meals.db"))
+    meal_store.init()
+    from .api import MealPlannerView
+    from .services import register_meal_services
+    hass.http.register_view(MealPlannerView())
+    register_meal_services(hass, meal_store)
+    return True
 
 
 class Household:
     """Serialize mutations and publish only successfully persisted state."""
 
     def __init__(self, hass, entry):
+        meal_store.init()
         self.hass = hass
         self.store = Store(hass, 1, f"{DOMAIN}.{entry.entry_id}")
         self.signal = f"{DOMAIN}_{entry.entry_id}_updated"
@@ -88,7 +100,7 @@ class Household:
             _LOGGER.debug("Ignoring scan with invalid request ID")
             return
         intent = event.data["intent"]
-        if intent in ("shopping", "spoiled") and not request_id:
+        if intent in ("shopping", "spoiled", "pantry") and not request_id:
             _LOGGER.debug("Ignoring scan without request ID")
             return
         self.latest_request[tracker] = request_id
@@ -100,6 +112,9 @@ class Household:
                 uid, outcome = await self.async_mutate(
                     "report_spoiled", barcode, tracker, request_id, dt_util.utcnow().isoformat()
                 )
+            elif intent == "pantry":
+                meal_store.observe_pantry(barcode, seen_at=dt_util.utcnow().isoformat(), tracker=tracker, request_id=request_id)
+                outcome = "pantry_observed"
         except Exception:
             _LOGGER.exception("Could not persist shopping scan")
             await self.async_reply(tracker, barcode, request_id, "save_failed", outcome="save_failed")
@@ -112,14 +127,19 @@ class Household:
             product = await self.retailer.lookup(barcode)
             if product is None:
                 status = "not_found"
-                if intent == "shopping":
+                if intent == "pantry":
+                    outcome = "pantry_observed_unresolved"
+                elif intent == "shopping":
                     uid, _ = await self.async_mutate(
                         "scan", barcode, tracker, dt_util.utcnow().isoformat()
                     )
                     outcome = "unresolved"
             else:
                 saved = True
-                if intent == "shopping":
+                if intent == "pantry":
+                    meal_store.resolve_pantry(tracker, request_id, product.name)
+                    outcome = "pantry_observed"
+                elif intent == "shopping":
                     quantity = await self.retailer.add_to_shopping_list(
                         product, f"{tracker}:{request_id}"
                     )

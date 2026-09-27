@@ -19,7 +19,7 @@ def load_household():
     ):
         modules[name] = types.ModuleType(name)
     modules["homeassistant.core"].callback = lambda f: f
-    modules["homeassistant.const"].Platform = types.SimpleNamespace(TODO="todo", SENSOR="sensor")
+    modules["homeassistant.const"].Platform = types.SimpleNamespace(TODO="todo", SENSOR="sensor", CALENDAR="calendar")
     modules["homeassistant.helpers.aiohttp_client"].async_get_clientsession = Mock()
     modules["homeassistant.helpers.dispatcher"].async_dispatcher_send = Mock()
     modules["homeassistant.helpers.storage"].Store = Mock()

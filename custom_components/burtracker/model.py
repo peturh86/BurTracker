@@ -19,7 +19,7 @@ def validate_scan(data, trackers):
     """Reject unsupported events without converting barcodes to numbers."""
     if str(data.get("schema_version")) != "1":
         raise ValueError("Unsupported schema version")
-    if data.get("intent") not in ("shopping", "spoiled", "price"):
+    if data.get("intent") not in ("shopping", "spoiled", "price", "pantry"):
         raise ValueError("Unsupported intent")
     tracker = data.get("tracker")
     if not isinstance(tracker, str) or tracker not in trackers:

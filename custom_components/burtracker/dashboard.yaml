@@ -1,0 +1,84 @@
+title: BurTracker
+views:
+  - title: Meals
+    path: meals
+    icon: mdi:food
+    cards:
+      - type: calendar
+        entities:
+          - calendar.burtracker_meals
+      - type: entities
+        title: Tonight
+        entities:
+          - entity: sensor.burtracker_todays_meal
+            name: Dinner
+          - entity: sensor.burtracker_pantry_barcode_observations
+            name: Pantry sightings
+      - type: markdown
+        title: Tonight's recipe
+        content: >-
+          {% set meal = states('sensor.burtracker_todays_meal') %}
+          **{{ meal }}**
+
+          **Ingredients**
+          {{ state_attr('sensor.burtracker_todays_meal', 'ingredients') or 'not recorded' }}
+
+          **Method**
+          {{ state_attr('sensor.burtracker_todays_meal', 'instructions') or 'not recorded' }}
+      - type: entities
+        title: Record meal feedback
+        show_header_toggle: false
+        entities:
+          - type: button
+            name: Great taste (5/5)
+            icon: mdi:thumb-up
+            tap_action:
+              action: call-service
+              service: burtracker.record_meal_feedback
+              service_data:
+                metric: taste
+                score: 5
+                comment: Great taste
+          - type: button
+            name: Everyone hated it (1/5)
+            icon: mdi:thumb-down
+            tap_action:
+              action: call-service
+              service: burtracker.record_meal_feedback
+              service_data:
+                metric: approval
+                score: 1
+                comment: Everyone hated it
+          - type: button
+            name: Too difficult to cook (2/5)
+            icon: mdi:chef-hat
+            tap_action:
+              action: call-service
+              service: burtracker.record_meal_feedback
+              service_data:
+                metric: difficulty
+                score: 2
+                comment: Too difficult to cook
+      - type: button
+        name: We are not home tonight
+        icon: mdi:home-export-outline
+        tap_action:
+          action: call-service
+          service: burtracker.set_meal_status
+          service_data:
+            status: not_home
+      - type: button
+        name: We ate out
+        icon: mdi:silverware-fork-knife
+        tap_action:
+          action: call-service
+          service: burtracker.set_meal_status
+          service_data:
+            status: ate_out
+      - type: markdown
+        title: Feedback actions
+        content: >-
+          For structured feedback use the `burtracker.record_meal_feedback` action.
+          Pick the date and metric, then optionally score it from 1 (poor) to 5 (great)
+          and add a note. Example: metric `difficulty`, score 2, comment "Too difficult
+          to cook after work".

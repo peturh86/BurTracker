@@ -52,10 +52,10 @@ struct Screen {
   std::string title = "Starting scanner";
   std::string detail;
   std::string price;
-  uint32_t colors[3] = {0x62DE9C, 0xFF707C, 0xFFD166};
+  uint32_t colors[4] = {0x62DE9C, 0xFF707C, 0xFFD166, 0x62DE9C};
 
   const char* intent() const {
-    return mode == 1 ? "spoiled" : mode == 2 ? "price" : "shopping";
+    return mode == 1 ? "spoiled" : mode == 2 ? "price" : mode == 3 ? "pantry" : "shopping";
   }
 
   std::vector<std::string> lines(const std::string& text) {
@@ -86,14 +86,15 @@ struct Screen {
     d.setTextDatum(top_left);
     d.setTextSize(1);
     d.setFont(&fonts::efontJA_16);
-    const char* labels[3] = {"SHOP", "SPOILED", "PRICE"};
+    const char* labels[3] = {mode == 3 ? "PANTRY" : "SHOP", "SPOILED", "PRICE"};
+    int selected = mode == 3 ? 0 : mode;
     for (int i = 0; i < 3; ++i) {
       int x = 8 + i * 104;
-      d.fillRoundRect(x, 6, 96, 38, 8, i == mode ? colors[i] : panel);
-      d.fillRoundRect(x + 10, 40, 76, 3, 1, colors[i]);
-      d.setTextColor(i == mode ? bg : colors[i]);
+      d.fillRoundRect(x, 6, 96, 38, 8, i == selected ? colors[mode] : panel);
+      d.fillRoundRect(x + 10, 40, 76, 3, 1, colors[i == selected ? mode : i]);
+      d.setTextColor(i == selected ? bg : colors[i]);
       d.drawCenterString(labels[i], x + 48, 16);
-      if (i == mode) d.fillTriangle(x + 42, 6, x + 54, 6, x + 48, 0, colors[i]);
+      if (i == selected) d.fillTriangle(x + 42, 6, x + 54, 6, x + 48, 0, colors[mode]);
     }
     d.fillRoundRect(8, 54, 304, 178, 12, panel);
     d.fillRoundRect(8, 69, 3, 148, 1, colors[mode]);
@@ -187,7 +188,10 @@ struct Screen {
              outcome == "save_failed" ? "Nothing recorded" :
              outcome == "kronan_added" ? (quantity.empty() ? "+1 added to HA" : "+1 added / " + quantity) :
              outcome == "unresolved" ? "Saved for identification" :
-             outcome == "not_added" ? "Not added to Kronan" : "Shopping list updated";
+             outcome == "not_added" ? "Not added to Kronan" :
+             outcome == "pantry_observed" ? "Pantry sighting saved" :
+             outcome == "pantry_observed_unresolved" ? "Sighting saved; product unknown" :
+             "Shopping list updated";
     if (status != "resolved") {
       price.clear();
       title = status == "not_found" ? "Product not found" :

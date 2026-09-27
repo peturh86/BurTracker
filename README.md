@@ -23,9 +23,15 @@ A household shopping-list manager with physical barcode trackers near the fridge
 
 BurTracker does not promise an accurate inventory. Missing scans, purchases elsewhere, shared products, and partial consumption make that impossible without extra work from users. Spoilage must be explicitly reported or clearly presented as an estimate.
 
+## Meal planner (0.6.0)
+
+BurTracker now stores household recipes, meal plans, structured feedback, pantry barcode observations and budget records in HA's persistent `.storage` directory. HA exposes a native meal calendar, meal-detail sensor, services, and an authenticated REST interface for an external meal-planning agent. Existing SHOP scans still add to Krónan; PANTRY is a separate mode that records a barcode sighting without inferring quantity or adding a purchase. See [setup and API](docs/ha-integration-setup.md).
+
+The database schema is early-stage/disposable and has no migration system yet. Calendar-aware planning, agent tool/client, price estimates, and automatic meal-list sync to Krónan remain to be implemented. Do not use shopping scan increments as pantry inventory.
+
 ## Project status
 
-Discovery and design foundation, established 2026-09-07. No firmware, working integrations, PCB layout, or enclosure CAD exists yet. Hardware entries are a preliminary BOM, not a purchasing or manufacturing release.
+Discovery and design foundation established 2026-09-07. Hardware remains a Core2 scanner prototype; no custom PCB/enclosure release yet.
 
 ## Documentation
 

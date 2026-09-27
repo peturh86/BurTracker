@@ -1,0 +1,52 @@
+record_meal_feedback:
+  name: Record meal feedback
+  description: Save structured feedback against the meal for a date.
+  fields:
+    day:
+      name: Meal date
+      required: true
+      selector:
+        date:
+    metric:
+      name: Feedback metric
+      required: true
+      selector:
+        select:
+          options:
+            - taste
+            - difficulty
+            - portions
+            - approval
+            - cost
+            - other
+    score:
+      name: Score (optional)
+      selector:
+        number:
+          min: 1
+          max: 5
+          mode: slider
+    comment:
+      name: Note
+      selector:
+        text:
+          multiline: true
+set_meal_status:
+  name: Set meal status
+  description: Mark a planned meal cooked, not home, eaten out, or cancelled.
+  fields:
+    day:
+      name: Meal date
+      required: true
+      selector:
+        date:
+    status:
+      name: Status
+      required: true
+      selector:
+        select:
+          options:
+            - cooked
+            - not_home
+            - ate_out
+            - cancelled
