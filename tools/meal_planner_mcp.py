@@ -169,9 +169,16 @@ async def start_meal_rerun(request_id: str) -> str:
 @mcp.tool()
 async def publish_meal_rerun_result(request_id: str, result_json: str = "", error: str = "") -> str:
     """Publish a draft to HA without saving. HA rejects the same meal as the prior suggestion."""
+    if error and result_json:
+        raise ValueError("provide either a verified quote or an error, not both")
+    if not error and not result_json:
+        raise ValueError("a fully priced quote or an error is required")
     result = json.loads(result_json) if result_json else None
     if result is not None and not isinstance(result, dict):
         raise ValueError("result_json must be a JSON object")
+    if result is not None and {"title", "portions", "ingredients", "instructions", "product_lines",
+                               "total_package_cost_isk", "cost_per_portion_isk", "price_observed_at"} - result.keys():
+        raise ValueError("a rerun result must be a fully priced meal quote")
     return _json(await _ha("POST", "complete_meal_rerun", args={
         "request_id": request_id, "result": result, "error": error or None,
     }))
