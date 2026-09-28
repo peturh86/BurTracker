@@ -120,6 +120,20 @@ class ApiBridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(kwargs["return_response"])
         self.assertEqual(data["start_date_time"], "2026-09-28T00:00:00")
 
+    async def test_rerun_result_callback_fires_update_event(self):
+        class Bus:
+            def async_fire(self, event_type, data):
+                self.fired = (event_type, data)
+        class Hass:
+            bus = Bus()
+        request = Request(headers={"X-BurTracker-Agent": "test-only-agent-token"},
+                          body={"request_id": "req-1", "result": {"title": "Draft"}},
+                          app={"hass": Hass()})
+        response = await self.view.post(request, "complete_meal_rerun")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(request.app["hass"].bus.fired,
+                         ("burtracker_meal_rerun_updated", {"request_id": "req-1"}))
+
     async def test_empty_external_calendar_set_is_explicit(self):
         class Hass:
             class states:

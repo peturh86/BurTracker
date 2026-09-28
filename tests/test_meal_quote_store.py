@@ -21,7 +21,7 @@ def quote(day="2026-09-28", title="Cod dinner"):
     ]
     return {"day": day, "title": title, "portions": 3.5, "source_servings": 4,
             "source": "LLM-generated recipe", "source_url": None,
-            "ingredients_text": "2 packages cod", "instructions": "Cook fully.",
+            "ingredients": ["cod"], "ingredients_text": "2 packages cod", "instructions": "Cook fully.",
             "product_lines": lines, "complete": True,
             "total_package_cost_isk": 2400, "cost_per_portion_isk": 685.71,
             "price_observed_at": "2026-09-27T12:00:00+00:00",
@@ -90,6 +90,16 @@ class MealQuoteStoreTests(unittest.TestCase):
         mismatched["product_lines"][0]["line_total_isk"] = 1
         with self.assertRaisesRegex(ValueError, "line total"):
             store.create_quote(mismatched)
+
+    def test_quote_persistence_rejects_missing_and_omitted_ingredient_mappings(self):
+        missing = quote()
+        missing.pop("ingredients")
+        with self.assertRaisesRegex(ValueError, "complete recipe ingredient list"):
+            store.create_quote(missing)
+        omitted = quote()
+        omitted["ingredients"] = ["cod", "potatoes"]
+        with self.assertRaisesRegex(ValueError, "every declared"):
+            store.create_quote(omitted)
 
     def test_missing_price_and_temporary_shortage_are_rejected(self):
         for field in ("price_isk", "temporary_shortage"):

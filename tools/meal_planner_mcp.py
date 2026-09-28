@@ -61,9 +61,10 @@ async def get_meal_planning_context(start_date: str = "", end_date: str = "") ->
     if end < start or (end - start).days > 90:
         raise ValueError("Date range must be ordered and no longer than 90 days")
     start_text, end_text = start.isoformat(), end.isoformat()
+    history_start = (start - timedelta(days=30)).isoformat()
     results = await asyncio.gather(
         _ha("GET", "settings"),
-        _ha("GET", "meals", args={"start": start_text, "end": end_text}),
+        _ha("GET", "meals", args={"start": history_start, "end": end_text}),
         _ha("GET", "feedback_history"),
         _ha("GET", "budget"),
         _ha("GET", "pantry"),
@@ -127,22 +128,22 @@ async def quote_kronan_recipe(day: str, slug: str, portions: float) -> str:
 
 @mcp.tool()
 async def quote_generated_meal(day: str, title: str, portions: float,
-                               product_lines_json: str, instructions: str,
-                               source_url: str = "") -> str:
-    """Price an LLM-written/adapted recipe only after every ingredient maps to a Krónan SKU.
+                               ingredients_json: str, product_lines_json: str,
+                               instructions: str, source_url: str = "") -> str:
+    """Price an LLM recipe after matching its separately listed complete ingredient inventory.
 
-    product_lines_json is a JSON array of {ingredient, sku, packages, quantity_basis}. Include
-    every required purchase. The model chooses semantic matches and package counts; HA re-fetches
-    each SKU's current Krónan details and blocks missing-price, shortage, or obvious non-lactose-free
-    dairy items. The resulting package total includes whole packs, not inferred pantry stock.
+    ingredients_json is a JSON array of all recipe ingredients. product_lines_json maps each
+    ingredient exactly once to {ingredient, sku, packages, quantity_basis}; HA checks coverage and
+    refreshes live product details. Totals use whole packs, not unconfirmed pantry sightings.
     """
     date.fromisoformat(day)
+    ingredients = json.loads(ingredients_json)
     lines = json.loads(product_lines_json)
-    if not isinstance(lines, list):
-        raise ValueError("product_lines_json must be a JSON array")
+    if not isinstance(ingredients, list) or not isinstance(lines, list):
+        raise ValueError("ingredients_json and product_lines_json must be JSON arrays")
     return _json(await _ha("POST", "quote_generated_meal", args={
-        "day": day, "title": title, "portions": portions, "items": lines,
-        "instructions": instructions, "source_url": source_url or None,
+        "day": day, "title": title, "portions": portions, "ingredients": ingredients,
+        "items": lines, "instructions": instructions, "source_url": source_url or None,
     }))
 
 
@@ -156,6 +157,23 @@ async def assess_meal_budget(day: str, basket_cost_isk: int) -> str:
     date.fromisoformat(day)
     return _json(await _ha("GET", "budget_assessment", args={
         "day": day, "basket_cost_isk": basket_cost_isk,
+    }))
+
+
+@mcp.tool()
+async def start_meal_rerun(request_id: str) -> str:
+    """Mark the HA rerun request as running; does not save a meal."""
+    return _json(await _ha("POST", "mark_meal_rerun_running", args={"request_id": request_id}))
+
+
+@mcp.tool()
+async def publish_meal_rerun_result(request_id: str, result_json: str = "", error: str = "") -> str:
+    """Publish a draft to HA without saving. HA rejects the same meal as the prior suggestion."""
+    result = json.loads(result_json) if result_json else None
+    if result is not None and not isinstance(result, dict):
+        raise ValueError("result_json must be a JSON object")
+    return _json(await _ha("POST", "complete_meal_rerun", args={
+        "request_id": request_id, "result": result, "error": error or None,
     }))
 
 
