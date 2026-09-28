@@ -16,14 +16,32 @@ ha = types.ModuleType("homeassistant")
 components = types.ModuleType("homeassistant.components")
 sensor_component = types.ModuleType("homeassistant.components.sensor")
 sensor_component.SensorEntity = type("SensorEntity", (), {})
+button_component = types.ModuleType("homeassistant.components.button")
+button_component.ButtonEntity = type("ButtonEntity", (), {})
+text_component = types.ModuleType("homeassistant.components.text")
+text_component.TextEntity = type("TextEntity", (), {})
+text_component.TextMode = types.SimpleNamespace(TEXT="text")
+core = types.ModuleType("homeassistant.core")
+core.callback = lambda fn: fn
 helpers = types.ModuleType("homeassistant.helpers")
+http_client = types.ModuleType("homeassistant.helpers.aiohttp_client")
+http_client.async_get_clientsession = lambda hass: None
+util = types.ModuleType("homeassistant.util")
+util_dt = types.ModuleType("homeassistant.util.dt")
+util_dt.now = lambda: __import__("datetime").datetime.now().astimezone()
 dispatcher = types.ModuleType("homeassistant.helpers.dispatcher")
 dispatcher.async_dispatcher_connect = lambda *args, **kwargs: (lambda: None)
 for name, module in {
     "homeassistant": ha,
     "homeassistant.components": components,
     "homeassistant.components.sensor": sensor_component,
+    "homeassistant.components.button": button_component,
+    "homeassistant.components.text": text_component,
+    "homeassistant.core": core,
     "homeassistant.helpers": helpers,
+    "homeassistant.helpers.aiohttp_client": http_client,
+    "homeassistant.util": util,
+    "homeassistant.util.dt": util_dt,
     "homeassistant.helpers.dispatcher": dispatcher,
 }.items():
     sys.modules[name] = module

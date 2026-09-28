@@ -90,7 +90,7 @@ class MealPlannerView(HomeAssistantView):
     elif action == 'quote_generated_meal':
      preferences=meal_store.get_settings().get('household_dietary_preferences',{})
      async with asyncio.timeout(60):
-      result=await retailer.quote_generated_meal(args.get('title'),args.get('portions'),args.get('items'),args.get('instructions',''),args.get('source_url'),preferences)
+      result=await retailer.quote_generated_meal(args.get('title'),args.get('portions'),args.get('items'),args.get('instructions',''),args.get('source_url'),preferences,args.get('ingredients'))
      result['day']=args.get('day')
      result['budget_assessment']=meal_store.budget_assessment(args.get('day'),result['total_package_cost_isk']) if result.get('complete') else None
      if result['complete']:result=meal_store.create_quote(result)
@@ -99,6 +99,8 @@ class MealPlannerView(HomeAssistantView):
      hass.bus.async_fire('burtracker_meal_updated',{'day':result.get('day')})
     return web.json_response({'ok':True,'result':result})
    result=api_call(action,**args)
+   if action=='complete_meal_rerun':
+    request.app[KEY_HASS].bus.async_fire('burtracker_meal_rerun_updated',{'request_id':args.get('request_id')})
    return web.json_response({'ok':True,'result':result})
   except (ValueError,KeyError,TypeError) as err:
    return web.json_response({'error':str(err)},status=HTTPStatus.BAD_REQUEST)

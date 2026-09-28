@@ -48,6 +48,13 @@ CREATE TABLE IF NOT EXISTS meal_quotes (
  id TEXT PRIMARY KEY, planned_day TEXT NOT NULL, payload_json TEXT NOT NULL,
  created_at TEXT NOT NULL, saved_meal_id INTEGER REFERENCES meals(id)
 );
+CREATE TABLE IF NOT EXISTS meal_rerun_requests (
+ id TEXT PRIMARY KEY, planned_day TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '',
+ rejected_title TEXT NOT NULL DEFAULT '', rejected_ingredients TEXT NOT NULL DEFAULT '',
+ status TEXT NOT NULL CHECK(status IN ('queued','running','complete','failed')),
+ result_json TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS reruns_latest ON meal_rerun_requests(created_at DESC);
 CREATE TABLE IF NOT EXISTS meal_shopping_items (
  id INTEGER PRIMARY KEY, meal_id INTEGER NOT NULL REFERENCES meals(id) ON DELETE CASCADE,
  sku TEXT NOT NULL, product_name TEXT NOT NULL, packages INTEGER NOT NULL CHECK(packages>0),
@@ -70,6 +77,7 @@ def init():
  with connect() as c:
   c.executescript(SCHEMA)
   _migrate_feedback_metrics(c)
+  _migrate_meal_rerun_columns(c)
   c.execute("INSERT OR IGNORE INTO settings(key,value) VALUES('household_baseline',?)",(json.dumps({'members':[{'role':'adult','count':2},{'role':'child','age':10,'count':1},{'role':'child','age':7,'count':1}],'child_portion_factor':0.75,'factor_is_provisional':True}),))
   c.execute("INSERT OR IGNORE INTO settings(key,value) VALUES('household_dietary_preferences',?)",(json.dumps({
    'lactose_free': True,
@@ -77,6 +85,13 @@ def init():
    'blood_sugar_consideration': True,
    'guidance': 'Household preferences, not medical advice. Follow the pregnant person’s clinician for individualized food-safety and blood-sugar guidance.'
   },ensure_ascii=False),))
+
+def _migrate_meal_rerun_columns(c):
+ columns={row['name'] for row in c.execute('PRAGMA table_info(meal_rerun_requests)')}
+ if not columns:return
+ for name in ('rejected_title','rejected_ingredients'):
+  if name not in columns:c.execute(f"ALTER TABLE meal_rerun_requests ADD COLUMN {name} TEXT NOT NULL DEFAULT ''")
+
 
 def _migrate_feedback_metrics(c):
  row=c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='feedback'").fetchone()
@@ -135,7 +150,18 @@ def create_quote(payload):
  portions=payload.get('portions')
  lines=payload.get('product_lines')
  if not isinstance(title,str) or not title.strip() or not isinstance(portions,(int,float)) or isinstance(portions,bool) or portions<=0:raise ValueError('valid title and portions required')
+ ingredients=payload.get('ingredients')
+ if not isinstance(ingredients,list) or not ingredients or len(ingredients)>100 or any(not isinstance(name,str) or not name.strip() or len(name)>200 for name in ingredients):raise ValueError('quote requires the complete recipe ingredient list')
+ normalized={name.strip().casefold() for name in ingredients}
+ if len(normalized)!=len(ingredients):raise ValueError('recipe ingredient list must not contain duplicates')
  if not isinstance(lines,list) or not lines or len(lines)>100:raise ValueError('quote must contain priced Krónan product lines')
+ mapped_ingredients = []
+ for line in lines:
+  if not isinstance(line,dict) or not isinstance(line.get('ingredient'),str):
+   raise ValueError('each product line requires a recipe ingredient mapping')
+  mapped_ingredients.append(line['ingredient'].strip().casefold())
+ if len(set(mapped_ingredients)) != len(lines) or set(mapped_ingredients) != normalized:
+  raise ValueError("product lines must map every declared recipe ingredient exactly once")
  total=0
  for line in lines:
   product=line.get('product') if isinstance(line,dict) else None
@@ -161,6 +187,66 @@ def read_quote(quote_id):
   row=c.execute('SELECT payload_json,created_at,saved_meal_id FROM meal_quotes WHERE id=?',(quote_id,)).fetchone()
   if not row:raise LookupError('quote not found')
   return dict(json.loads(row['payload_json']),created_at=row['created_at'],saved_meal_id=row['saved_meal_id'])
+
+def create_meal_rerun(day,reason='',rejected_title='',rejected_ingredients=''):
+ Date.fromisoformat(day)
+ if not isinstance(reason,str) or len(reason)>1000:raise ValueError('reason must be text up to 1000 characters')
+ if not isinstance(rejected_title,str) or len(rejected_title)>200:raise ValueError('rejected title must be text up to 200 characters')
+ if not isinstance(rejected_ingredients,str) or len(rejected_ingredients)>4000:raise ValueError('rejected ingredients must be text up to 4000 characters')
+ request_id=str(uuid4()); now=datetime.now(timezone.utc).isoformat()
+ with connect() as c:
+  c.execute('INSERT INTO meal_rerun_requests(id,planned_day,reason,rejected_title,rejected_ingredients,status,created_at,updated_at) VALUES(?,?,?,?,?,\'queued\',?,?)',
+            (request_id,day,reason.strip(),rejected_title.strip(),rejected_ingredients.strip(),now,now))
+ return get_meal_rerun(request_id)
+
+def get_meal_rerun(request_id):
+ with connect() as c:
+  row=c.execute('SELECT * FROM meal_rerun_requests WHERE id=?',(request_id,)).fetchone()
+ if not row:raise LookupError('meal rerun request not found')
+ result=dict(row)
+ if result.get('result_json'):
+  try:result['result']=json.loads(result.pop('result_json'))
+  except (TypeError,json.JSONDecodeError):result['result']={}
+ else:result['result']=None;result.pop('result_json',None)
+ return result
+
+def latest_meal_rerun():
+ with connect() as c:
+  row=c.execute('SELECT id FROM meal_rerun_requests ORDER BY created_at DESC LIMIT 1').fetchone()
+ return get_meal_rerun(row['id']) if row else None
+
+def finish_meal_rerun(request_id,result,error=None):
+ if not isinstance(request_id,str) or not request_id:raise ValueError('request_id required')
+ if error is None and not isinstance(result,dict):raise ValueError('result must be an object')
+ if error is None:
+  request=get_meal_rerun(request_id)
+  title=result.get('title')
+  if request.get('rejected_title'):
+   if not isinstance(title,str) or title.strip().casefold()==request['rejected_title'].strip().casefold():
+    raise ValueError('the new suggestion must have a different title from the rejected meal')
+   prior=' '.join(request.get('rejected_ingredients','').split()).casefold()
+   current=result.get('ingredients_text')
+   if prior and (not isinstance(current,str) or not current.strip()):
+    raise ValueError('the new suggestion must include its ingredients for rejection checking')
+   if prior and ' '.join(current.split()).casefold()==prior:
+    raise ValueError('the new suggestion must not repeat the rejected ingredient list')
+ now=datetime.now(timezone.utc).isoformat()
+ status='failed' if error else 'complete'
+ payload=json.dumps(result,ensure_ascii=False) if error is None else None
+ if payload is not None and len(payload)>40000:raise ValueError('rerun result is too large')
+ with connect() as c:
+  changed=c.execute('UPDATE meal_rerun_requests SET status=?,result_json=?,error=?,updated_at=? WHERE id=? AND status IN (\'queued\',\'running\')',
+                     (status,payload,(str(error)[:1000] if error else None),now,request_id)).rowcount
+  if changed!=1:raise LookupError('rerun request missing or already finished')
+ return get_meal_rerun(request_id)
+
+def mark_meal_rerun_running(request_id):
+ now=datetime.now(timezone.utc).isoformat()
+ with connect() as c:
+  changed=c.execute("UPDATE meal_rerun_requests SET status='running',updated_at=? WHERE id=? AND status='queued'",(now,request_id)).rowcount
+ if changed!=1:raise LookupError('rerun request missing or not queued')
+ return get_meal_rerun(request_id)
+
 
 def commit_quote(quote_id,replace_existing=False):
  if not isinstance(quote_id,str) or not quote_id:raise ValueError('quote_id required')
@@ -343,7 +429,10 @@ def api_call(action, **args):
         'pantry': lambda: recent_pantry(),
         'observe_pantry': lambda: observe_pantry(**args),
         'feedback_history': lambda: recent_feedback(),
-            'budget': lambda: get_budget(),
+        'meal_rerun_latest': lambda: latest_meal_rerun(),
+        'complete_meal_rerun': lambda: finish_meal_rerun(args['request_id'],args.get('result'),args.get('error')),
+        'mark_meal_rerun_running': lambda: mark_meal_rerun_running(args['request_id']),
+        'budget': lambda: get_budget(),
         'budget_assessment': lambda: budget_assessment(args['day'],args['basket_cost_isk']),
         'add_budget': lambda: add_budget(**args),
         'add_purchase': lambda: add_purchase(**args),

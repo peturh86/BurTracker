@@ -2,9 +2,10 @@
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from . import meals
+from .meal_rerun_entities import MealRerunStatus
 
 async def async_setup_entry(hass, entry, async_add_entities):
- async_add_entities([SpoilageReports(entry), PantrySummary(entry), TodayMeal(entry), TomorrowMeal(entry)])
+ async_add_entities([SpoilageReports(entry), PantrySummary(entry), TodayMeal(entry), TomorrowMeal(entry), MealRerunStatus(entry)])
 
 class _MealSensor(SensorEntity):
  _attr_has_entity_name=True

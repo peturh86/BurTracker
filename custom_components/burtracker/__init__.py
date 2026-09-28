@@ -19,7 +19,7 @@ from .model import ShoppingList, parse_trackers, validate_scan
 from . import meals as meal_store
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS = [Platform.TODO, Platform.SENSOR, Platform.CALENDAR, Platform.SELECT, Platform.NUMBER, Platform.TEXT]
+PLATFORMS = [Platform.TODO, Platform.SENSOR, Platform.CALENDAR, Platform.SELECT, Platform.NUMBER, Platform.TEXT, Platform.BUTTON]
 
 async def async_setup(hass, config):
     meal_store.DB = Path(hass.config.path(".storage", "burtracker_meals.db"))

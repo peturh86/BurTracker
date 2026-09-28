@@ -343,12 +343,32 @@ class ProductListTests(unittest.IsolatedAsyncioTestCase):
                    "nutrition": {}}
         client, session = self.client(Response(payload=product))
         quote = await client.quote_generated_meal("Roast veg", 3.5, [{
-            "ingredient": "olive oil", "sku": "123", "packages": 1,
+            "ingredient": "cod", "sku": "123", "packages": 1,
             "quantity_basis": "one 500 ml bottle covers the recipe",
-        }], "Roast vegetables")
+        }], "Roast vegetables", ingredients=["cod"])
         self.assertEqual(quote["total_package_cost_isk"], 500)
         self.assertEqual(quote["product_lines"][0]["product"]["sku"], "123")
         self.assertEqual(session.calls[0][1].endswith("/products/123/"), True)
+
+    async def test_generated_quote_rejects_omitted_and_duplicate_ingredients_before_fetch(self):
+        client, session = self.client()
+        with self.assertRaisesRegex(ValueError, "every declared recipe ingredient"):
+            await client.quote_generated_meal("Dinner", 4, [{
+                "ingredient": "cod", "sku": "fish", "packages": 1,
+            }], ingredients=["cod", "potatoes"])
+        with self.assertRaisesRegex(ValueError, "unique"):
+            await client.quote_generated_meal("Dinner", 4, [{
+                "ingredient": "cod", "sku": "fish", "packages": 1,
+            }], ingredients=["cod", "cod"])
+        self.assertEqual(session.calls, [])
+
+    async def test_generated_quote_rejects_missing_ingredient_list(self):
+        client, session = self.client()
+        with self.assertRaisesRegex(ValueError, "provide the complete recipe ingredients"):
+            await client.quote_generated_meal("Dinner", 4, [{
+                "ingredient": "cod", "sku": "fish", "packages": 1,
+            }])
+        self.assertEqual(session.calls, [])
 
     async def test_lactose_free_preference_blocks_unverified_dairy_product(self):
         product = {"sku": "cream", "name": "Sýrður rjómi", "price": 400,
@@ -358,11 +378,23 @@ class ProductListTests(unittest.IsolatedAsyncioTestCase):
         client, _ = self.client(Response(payload=product))
         quote = await client.quote_generated_meal("Dinner", 4, [{
             "ingredient": "sýrður rjómi", "sku": "cream", "packages": 1,
-        }], dietary_preferences={"lactose_free": True})
+        }], dietary_preferences={"lactose_free": True}, ingredients=["sýrður rjómi"])
         self.assertFalse(quote["complete"])
         self.assertEqual(quote["blocked_skus"], ["cream"])
         self.assertEqual(quote["dietary_conflicts"][0]["sku"], "cream")
         self.assertIsNone(quote["total_package_cost_isk"])
+
+    async def test_egg_category_does_not_trigger_lactose_conflict(self):
+        product = {"sku": "eggs", "name": "Stjörnuegg stór brún egg 6stk", "price": 539,
+                   "discountedPrice": 539, "onSale": False, "temporaryShortage": False,
+                   "priceInfo": "405 g", "chargedByWeight": False,
+                   "categoryPath": "Mjólkurvörur og egg / Egg / Egg", "tags": [], "nutrition": {}}
+        client, _ = self.client(Response(payload=product))
+        quote = await client.quote_generated_meal("Vegetable frittata", 2, [{
+            "ingredient": "eggs", "sku": "eggs", "packages": 1,
+        }], dietary_preferences={"lactose_free": True}, ingredients=["eggs"])
+        self.assertTrue(quote["complete"])
+        self.assertEqual(quote["total_package_cost_isk"], 539)
 
     async def test_kr_n_lactose_free_tag_allows_dairy_product(self):
         product = {"sku": "cream-lf", "name": "Sýrður rjómi laktósafrír", "price": 500,
@@ -373,7 +405,7 @@ class ProductListTests(unittest.IsolatedAsyncioTestCase):
         client, _ = self.client(Response(payload=product))
         quote = await client.quote_generated_meal("Dinner", 4, [{
             "ingredient": "lactose-free sour cream", "sku": "cream-lf", "packages": 1,
-        }], dietary_preferences={"lactose_free": True})
+        }], dietary_preferences={"lactose_free": True}, ingredients=["lactose-free sour cream"])
         self.assertTrue(quote["complete"])
         self.assertEqual(quote["total_package_cost_isk"], 500)
 

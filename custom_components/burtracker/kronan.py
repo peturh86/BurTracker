@@ -38,9 +38,10 @@ def lactose_conflict(product, preferences):
     if any(isinstance(tag, dict) and tag.get("slug") == "lactosefree" for tag in tags):
         return None
     category = str(product.get("category_path") or "").casefold()
+    category_segments = {segment.strip() for segment in category.split("/")}
     name = str(product.get("name") or "").casefold()
     markers = ("mjólk", "rjómi", "ostur", "smjör", "jógúrt", "skyr", "cream", "cheese", "butter", "yogurt")
-    if "mjólkurvörur" in category or any(word in name for word in markers):
+    if "mjólkurvörur" in category_segments or any(word in name for word in markers):
         return {"sku": product.get("sku"), "product": product.get("name"),
                 "reason": "Dairy-category product lacks Krónan's lactose-free tag; do not use for this household without confirmation."}
     return None
@@ -309,7 +310,7 @@ class KronanRetailer:
             "price_note": "Total is the full price to buy all listed packages; per-portion divides that basket by portions and does not deduct pantry stock or leftover package contents. Krónan catalog package prices may differ at checkout; weight-priced products are estimates.",
         }
 
-    async def quote_generated_meal(self, title, portions, items, instructions="", source_url=None, dietary_preferences=None):
+    async def quote_generated_meal(self, title, portions, items, instructions="", source_url=None, dietary_preferences=None, ingredients=None):
         """Quote LLM-written recipe lines only after each selected SKU is re-read from Krónan."""
         if not isinstance(title, str) or not title.strip() or len(title) > 200:
             raise ValueError("valid meal title required")
@@ -319,8 +320,19 @@ class KronanRetailer:
             raise ValueError("portions must be positive") from err
         if not 0 < portions <= 100:
             raise ValueError("portions must be greater than 0 and at most 100")
+        if not isinstance(ingredients, list) or not ingredients or len(ingredients) > 100:
+            raise ValueError("provide the complete recipe ingredients as a list")
+        required = [name.strip() for name in ingredients if isinstance(name, str) and name.strip() and len(name) <= 200]
+        if len(required) != len(ingredients) or len({name.casefold() for name in required}) != len(required):
+            raise ValueError("recipe ingredients must be non-empty, unique text")
         if not isinstance(items, list) or not items or len(items) > 100:
             raise ValueError("one to 100 ingredient product lines required")
+        mapped = [item.get("ingredient", "").strip().casefold()
+                  for item in items if isinstance(item, dict) and isinstance(item.get("ingredient"), str)]
+        if len(mapped) != len(items) or len(set(mapped)) != len(items):
+            raise ValueError("product lines must contain one mapping per recipe ingredient")
+        if set(mapped) != {name.casefold() for name in required}:
+            raise ValueError("product lines must map every declared recipe ingredient exactly once")
         lines = []
         for item in items:
             if not isinstance(item, dict):
@@ -331,6 +343,7 @@ class KronanRetailer:
             basis = item.get("quantity_basis", "")
             if not isinstance(ingredient, str) or not ingredient.strip() or len(ingredient) > 200:
                 raise ValueError("each product line requires its recipe ingredient")
+            ingredient = ingredient.strip()
             if not isinstance(sku, str) or not sku.strip() or type(packages) is not int or not 1 <= packages <= 100:
                 raise ValueError("each product line requires a Krónan SKU and whole package count")
             if not isinstance(basis, str) or len(basis) > 500:
@@ -352,9 +365,9 @@ class KronanRetailer:
         total = None if blocked else sum(line["line_total_isk"] for line in lines)
         return {
             "title": title.strip(), "source": "LLM-generated recipe",
-            "source_url": source_url, "portions": portions,
+            "source_url": source_url, "portions": portions, "ingredients": required,
             "complete": not blocked, "saveable": not blocked,
-            "mapping_warning": "Every recipe ingredient must be explicitly represented by a Krónan SKU line. Pantry sightings are advisory unless quantities are confirmed.",
+            "mapping_warning": "Every declared recipe ingredient has an explicit Krónan SKU mapping; mapping semantics and package quantities are proposed by the LLM. Pantry sightings are advisory unless quantities are confirmed.",
             "ingredients_text": "\n".join(f"{line['ingredient']} — {line['packages']} × {line['name']} ({line['product'].get('price_info') or 'pack size not supplied'})" for line in lines),
             "instructions": instructions if isinstance(instructions, str) else "",
             "product_lines": lines, "blocked_skus": sorted(set(blocked)),

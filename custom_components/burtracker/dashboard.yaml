@@ -25,6 +25,42 @@ views:
           {% else %}
           No pantry barcode observations yet.
           {% endif %}
+      - type: entities
+        title: Reject or rerun dinner suggestion
+        show_header_toggle: false
+        entities:
+          - entity: text.burtracker_meal_rerun_reason
+            name: Optional reason (e.g. no tofu)
+          - entity: button.burtracker_rerun_meal_suggestion
+            name: Reject current suggestion & generate a different one
+          - entity: sensor.burtracker_meal_rerun
+            name: Rerun status
+      - type: markdown
+        title: Latest rerun draft
+        content: >-
+          {% set draft = state_attr('sensor.burtracker_meal_rerun', 'draft') or {} %}
+          {% set status = state_attr('sensor.burtracker_meal_rerun', 'status') %}
+          **{{ states('sensor.burtracker_meal_rerun') }}**{% if status %} — {{ status }}{% endif %}
+
+          The button rejects the displayed/today's suggestion and asks for a different one. Add an optional constraint first if useful.
+
+          {% if state_attr('sensor.burtracker_meal_rerun', 'rejected_title') %}
+          Rejected: {{ state_attr('sensor.burtracker_meal_rerun', 'rejected_title') }}
+          {% endif %}
+          {% if state_attr('sensor.burtracker_meal_rerun', 'error') %}
+          {{ state_attr('sensor.burtracker_meal_rerun', 'error') }}
+          {% endif %}
+
+          {% if draft %}
+          {% set total = draft.get('total_package_cost_isk') %}
+          {% if total is not none %}Basket estimate: **{{ total }} ISK**{% endif %}
+          {% set macros = draft.get('macro_estimates') or {} %}
+          {% if macros %}
+          Macros/portion: {{ macros }}
+          {% endif %}
+          {{ draft.get('ingredients_text', '') }}
+          {{ draft.get('instructions', '') }}
+          {% endif %}
       - type: markdown
         title: Tonight's recipe
         content: >-

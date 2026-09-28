@@ -114,6 +114,12 @@ Supported agent operations:
 
 Quote totals are the full amount to buy all listed packages. “Per portion” divides that basket by planned portions; it does not infer household stock or subtract leftover package contents. Krónan home-delivery catalog search is not a physical-store shelf-stock guarantee, and variable-weight/checkout prices may differ. The agent does not automatically mutate Krónan lists.
 
+## HA-triggered meal reruns
+
+BurTracker exposes native entities for an optional rerun reason, a rerun button, and the latest result/status sensor. Pressing the button creates a durable draft request, then sends a signed POST to the Hermes webhook at `http://127.0.0.1:8644/webhooks/burtracker-meal-rerun`. The listener must remain bound to loopback; do not expose it through a reverse proxy or firewall. The webhook HMAC key is derived from the existing host-only BurTracker agent token using context `burtracker-hermes-webhook-v3`; HA and the meal-planner profile must use the same token file. Keep the listener loopback-only and never put either key in dashboard YAML or Git. Hermes runs one fresh meal-planning turn, reports its compact draft back through the authenticated HA agent API, and does not save/commit a meal. The result is shown on `sensor.burtracker_meal_rerun`. Pressing **Reject current suggestion & generate a different one** excludes the displayed draft (or today's saved dinner if no draft is displayed); the optional reason field adds a constraint for this rerun only. A backend guard refuses to publish the same title or exact ingredient list. Reruns are additional on-demand model runs, remain drafts, and never save a meal.
+
+The Hermes `meal-planner` profile must have webhook enabled on `127.0.0.1:8644`, and the `burtracker-meal-rerun` subscription must accept the `meal_rerun` event. The Home Assistant container uses host networking and the existing read-only `BURTRACKER_AGENT_TOKEN_FILE` mount; no extra port or secret mount is needed. Never put the agent token or webhook route secret in dashboard YAML or Git.
+
 Source: https://api.kronan.is/api/v1/schema/swagger-ui/#/product-lists
 Machine schema: https://api.kronan.is/api/v1/schema/
 
@@ -198,19 +204,14 @@ Default household settings are 2 adults, children aged 10 and 7, and a provision
 
 The Core2's left SHOP tab now toggles to PANTRY when pressed again; tap it again to return to SHOP. PANTRY records one timestamped barcode sighting, looks up its product name if Krónan is available, and does not add to the Krónan shopping list or infer quantity. Replayed tracker/request IDs are deduplicated. Quantities remain unknown unless explicitly confirmed. Sightings include recent/aging/stale confidence (7/30-day thresholds), not assumed stock.
 
-## 0.6.1 installation and usable meal dashboard
+## HACS installation and usable meal dashboard
 
-1. Update/copy `custom_components/burtracker` into `/config/custom_components/burtracker` and restart Home Assistant (HACS can install the integration code).
+1. Update BurTracker through HACS and restart Home Assistant after the release is available.
 2. Update firmware by copying `m5stackcore2.yaml` and `burtracker_ui.h` together into the ESPHome configuration directory beside your real `secrets.yaml`, then install/OTA flash the node. The Core2 left button toggles SHOP/PANTRY. The firmware is not installed by HACS.
-3. In Home Assistant, open Settings → Dashboards → Add dashboard → New dashboard. Choose a title and URL, then open its ⋮ menu → Edit dashboard → Raw configuration editor.
-4. Paste the contents of `custom_components/burtracker/dashboard.yaml` and save. The dashboard uses built-in cards only.
-5. Use the integration's actual entity IDs: `calendar.burtracker_meals`, `sensor.today_s_meal`, `sensor.pantry_barcode_observations`, `select.burtracker_feedback_metric`, `number.burtracker_feedback_score`, and `text.burtracker_feedback_comment`. The feedback entities are created by the BurTracker integration itself. The Pantry items Markdown card renders the sensor's `items` attribute.
-6. For plan entry initially, use the authenticated API endpoint described below (or the calendar is empty until meals are added). Feedback and “not home” / “ate out” buttons are available directly on the dashboard for tonight.
-
-The dashboard gives tonight-status controls. The feedback/status services default the date to today when omitted. For another date or custom metrics/scores/text, use Developer tools → Actions → `burtracker.record_meal_feedback`. The feedback schema accepts enjoyment/taste, difficulty, portions, approval, cost, and other, with an optional 1–5 score and comment.
-
-The project dashboard YAML is a starter configuration, not automatically installed by HACS. After updating the integration, use the dashboard YAML from `custom_components/burtracker/dashboard.yaml`; BurTracker creates the feedback selector, score, and comment entities itself, so no helper YAML or script needs to be merged.
-
+3. The project dashboard YAML is a starter configuration, not automatically installed or updated by HACS. Merge `custom_components/burtracker/dashboard.yaml` into your dashboard's YAML source (or import it as a dashboard). It includes the rerun reason field, rejection button, result/status sensor, and draft details.
+4. Use the integration's actual entity IDs: `calendar.burtracker_meals`, `sensor.today_s_meal`, `sensor.tomorrow_s_meal`, `sensor.pantry_barcode_observations`, `select.burtracker_feedback_metric`, `number.burtracker_feedback_score`, `text.burtracker_feedback_comment`, `text.burtracker_meal_rerun_reason`, `button.burtracker_rerun_meal_suggestion`, and `sensor.burtracker_meal_rerun`. Rerun controls are native BurTracker entities; no helper YAML or scripts are needed.
+5. On the dinner card, review the draft, optionally enter a rerun reason, then press **Reject current suggestion & generate a different one**. It rejects the displayed draft (or today's saved dinner when no draft is displayed), requests another LLM-generated candidate, refreshes its Krónan products, and shows the draft without saving it. The server refuses the same title or exact ingredient list; the agent prompt also excludes the rejected meal and recipe.
+6. Feedback and “not home” / “ate out” buttons are available directly on the dashboard. The feedback/status services default the date to today when omitted.
 
 The API route is authenticated by Home Assistant. Examples:
 - `GET /api/burtracker/meals/meals` (today through the next seven days by default)
