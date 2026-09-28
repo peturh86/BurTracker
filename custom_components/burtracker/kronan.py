@@ -102,7 +102,7 @@ class KronanRetailer:
             raise LookupFailure() from err
 
     async def search_products(self, query, store=None, page=1, page_size=15):
-        """Search Krónan's published catalog; prices are observations, not checkout quotes."""
+        """Search Krónan's product catalog for semantic ingredient matching and quotes."""
         if not isinstance(query, str) or not query.strip() or len(query.strip()) > 64:
             raise ValueError("query must contain 1 to 64 characters")
         if type(page) is not int or not 1 <= page <= 1000:

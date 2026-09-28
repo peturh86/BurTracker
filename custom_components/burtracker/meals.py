@@ -220,16 +220,33 @@ def finish_meal_rerun(request_id,result,error=None):
  if error is None and not isinstance(result,dict):raise ValueError('result must be an object')
  if error is None:
   request=get_meal_rerun(request_id)
+  if request.get('status') not in {'queued','running'}:raise LookupError('rerun request missing or already finished')
   title=result.get('title')
+  ingredients=result.get('ingredients')
+  if not isinstance(title,str) or not title.strip() or len(title)>200:raise ValueError('rerun requires a meal title')
+  if not isinstance(ingredients,list) or not ingredients or len(ingredients)>100 or any(not isinstance(name,str) or not name.strip() or len(name)>200 for name in ingredients):raise ValueError('rerun requires the complete recipe ingredient list')
+  normalized={name.strip().casefold() for name in ingredients}
+  if len(normalized)!=len(ingredients):raise ValueError('rerun ingredients must not contain duplicates')
+  if not isinstance(result.get('portions'),(int,float)) or isinstance(result.get('portions'),bool) or not 0<float(result['portions'])<=100:raise ValueError('rerun portions must be positive and at most 100')
+  lines=result.get('product_lines')
+  if not isinstance(lines,list) or len(lines)!=len(ingredients):raise ValueError('rerun requires one verified product line for every ingredient')
+  mapped=[]
+  for line in lines:
+   if not isinstance(line,dict) or not isinstance(line.get('ingredient'),str) or not line['ingredient'].strip():raise ValueError('each quote line must identify its recipe ingredient')
+   product=line.get('product')
+   if not isinstance(product,dict) or product.get('provider')!='kronan' or not isinstance(product.get('sku'),str) or not product['sku'].strip() or not isinstance(product.get('name'),str) or type(product.get('price_isk')) is not int or product['price_isk']<0 or product.get('temporary_shortage') is True:raise ValueError('every rerun ingredient needs a current priced Krónan product without a reported shortage')
+   packages=line.get('packages')
+   if type(packages) is not int or packages<1 or line.get('sku')!=product['sku'] or line.get('unit_price_isk')!=product['price_isk'] or line.get('line_total_isk')!=packages*product['price_isk']:raise ValueError('rerun product line does not match its verified SKU, price and package count')
+   mapped.append(line['ingredient'].strip().casefold())
+  if len(set(mapped))!=len(mapped) or set(mapped)!=normalized:raise ValueError('verified product lines must map every recipe ingredient exactly once')
+  total=sum(line['line_total_isk'] for line in lines)
+  if type(result.get('total_package_cost_isk')) is not int or result['total_package_cost_isk']!=total:raise ValueError('rerun basket total does not match verified product lines')
   if request.get('rejected_title'):
-   if not isinstance(title,str) or title.strip().casefold()==request['rejected_title'].strip().casefold():
-    raise ValueError('the new suggestion must have a different title from the rejected meal')
-   prior=' '.join(request.get('rejected_ingredients','').split()).casefold()
-   current=result.get('ingredients_text')
-   if prior and (not isinstance(current,str) or not current.strip()):
-    raise ValueError('the new suggestion must include its ingredients for rejection checking')
-   if prior and ' '.join(current.split()).casefold()==prior:
-    raise ValueError('the new suggestion must not repeat the rejected ingredient list')
+   if title.strip().casefold()==request['rejected_title'].strip().casefold():raise ValueError('the new suggestion must have a different title from the rejected meal')
+   prior=' '.join(request.get('rejected_ingredients','').replace(',',' ').split()).casefold()
+   current=' '.join(ingredients).casefold()
+   if prior and current==prior:raise ValueError('the new suggestion must not repeat the rejected ingredient list')
+  if not isinstance(result.get('ingredients_text'),str) or not result['ingredients_text'].strip() or not isinstance(result.get('instructions'),str) or not result['instructions'].strip():raise ValueError('rerun requires readable ingredients and instructions')
  now=datetime.now(timezone.utc).isoformat()
  status='failed' if error else 'complete'
  payload=json.dumps(result,ensure_ascii=False) if error is None else None

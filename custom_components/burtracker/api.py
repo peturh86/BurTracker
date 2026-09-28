@@ -91,14 +91,36 @@ class MealPlannerView(HomeAssistantView):
      preferences=meal_store.get_settings().get('household_dietary_preferences',{})
      async with asyncio.timeout(60):
       result=await retailer.quote_generated_meal(args.get('title'),args.get('portions'),args.get('items'),args.get('instructions',''),args.get('source_url'),preferences,args.get('ingredients'))
+     if not result.get('complete'):
+      return web.json_response({'error':'meal_unobtainable','result':result},status=HTTPStatus.UNPROCESSABLE_ENTITY)
      result['day']=args.get('day')
-     result['budget_assessment']=meal_store.budget_assessment(args.get('day'),result['total_package_cost_isk']) if result.get('complete') else None
-     if result['complete']:result=meal_store.create_quote(result)
+     result['budget_assessment']=meal_store.budget_assessment(args.get('day'),result['total_package_cost_isk'])
+     result=meal_store.create_quote(result)
     else:
      result=meal_store.commit_quote(args.get('quote_id'),args.get('replace_existing',False))
      hass.bus.async_fire('burtracker_meal_updated',{'day':result.get('day')})
     return web.json_response({'ok':True,'result':result})
-   result=api_call(action,**args)
+   if action=='complete_meal_rerun' and not args.get('error'):
+    candidate=args.get('result')
+    if not isinstance(candidate,dict):raise ValueError('rerun result must be a quote')
+    request_row=meal_store.get_meal_rerun(args.get('request_id'))
+    if request_row.get('status') not in {'queued','running'}:raise LookupError('rerun request missing or already finished')
+    households=[getattr(entry,'runtime_data',None) for entry in request.app[KEY_HASS].config_entries.async_entries(DOMAIN)]
+    households=[household for household in households if household is not None]
+    if len(households)!=1:return web.json_response({'error':'burtracker_not_configured'},status=HTTPStatus.SERVICE_UNAVAILABLE)
+    lines=candidate.get('product_lines')
+    if not isinstance(lines,list):raise ValueError('rerun requires product lines')
+    items=[{'ingredient':line.get('ingredient'),'sku':line.get('sku'),'packages':line.get('packages'),
+            'quantity_basis':line.get('quantity_basis','')} for line in lines if isinstance(line,dict)]
+    preferences=meal_store.get_settings().get('household_dietary_preferences',{})
+    async with asyncio.timeout(60):
+     verified=await households[0].retailer.quote_generated_meal(candidate.get('title'),candidate.get('portions'),items,
+      candidate.get('instructions',''),candidate.get('source_url'),preferences,candidate.get('ingredients'))
+    if not verified.get('complete'):
+     return web.json_response({'error':'meal_unobtainable','result':verified},status=HTTPStatus.UNPROCESSABLE_ENTITY)
+    verified['day']=request_row['planned_day']
+    result=meal_store.finish_meal_rerun(args['request_id'],verified)
+   else:result=api_call(action,**args)
    if action=='complete_meal_rerun':
     request.app[KEY_HASS].bus.async_fire('burtracker_meal_rerun_updated',{'request_id':args.get('request_id')})
    return web.json_response({'ok':True,'result':result})
